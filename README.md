@@ -112,7 +112,13 @@ of its worked examples. Some implementation details differ:
 - The 3×3 quadrupole eigenvalues come from `numpy.linalg.eigvalsh`, not a closed
   form.
 - Malformed input raises an error that names the file and line, where the
-  Fortran could read garbage or stop silently.
+  Fortran could read garbage or stop silently. This includes a number too wide
+  for its field, which Fortran prints as asterisks joined to the column before
+  it, shifting the columns after it.
+- The Fortran program skips 14 lines between the atomic coordinates and the
+  multipole table. The September 2017 Chargemol release writes 13, so here the
+  table is found by its title line instead, and that release's
+  `DDEC6_even_tempered_net_atomic_charges.xyz` can be read too.
 - Chargemol writes the atom and pair counts in five-character fields, which
   print as `*****` from 100,000 on. The Fortran program stops on these; here
   the count is taken from the number of rows in the table instead.

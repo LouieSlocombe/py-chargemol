@@ -9,7 +9,10 @@ Two files are read:
   with the bond overlap populations between pairs of atoms.
 
 The layout handling follows the QDR program's Fortran list-directed reads, which skip
-blank lines. All quantities are converted to atomic units (bohr) on reading.
+blank lines. Unlike the QDR program, the atomic multipole table is found by its title
+rather than at a fixed line, because the September 2017 Chargemol release lists one
+computational parameter fewer above it than later versions. All quantities are
+converted to atomic units (bohr) on reading.
 """
 
 import itertools
@@ -30,11 +33,21 @@ type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
 type StrPath = str | os.PathLike[str]
 
-_HEADER_LINES_BEFORE_MULTIPOLES: Final = 14
-"""Non-blank lines between the coordinate block and the atomic multipole table."""
+_MULTIPOLE_TABLE_TITLE: Final = "The following XYZ coordinates are in angstroms."
+"""Start of the title line of the atomic multipole table."""
+
+_HEADER_LINES_BEFORE_MULTIPOLES: Final = 2
+"""Non-blank lines from the multipole table's title to its first row."""
 
 _HEADER_LINES_BEFORE_CLOUD: Final = 2
 """Non-blank lines between the multipole table and the electron cloud table."""
+
+_MULTIPOLE_COLUMNS: Final = 18
+"""Atom number, symbol, position, charge, dipole and its magnitude, five quadrupole
+components, and three quadrupole eigenvalues."""
+
+_CLOUD_COLUMNS: Final = 8
+"""Atom number, symbol, position, ``a``, ``b``, and the squared correlation."""
 
 _HEADER_LINES_BEFORE_OVERLAPS: Final = 2
 """Non-blank lines between the pair count and the first overlap population."""
@@ -147,9 +160,9 @@ def read_ddec6_net_atomic_charges(path: StrPath) -> DDEC6Analysis:
 
     # Fortran list-directed reads skip blank records, so count non-blank lines only.
     body = [line for line in lines if line.strip()]
-    start = 0
-    coordinate_rows = _block(body, start, natoms, "atomic coordinates", path)
-    start += natoms + _HEADER_LINES_BEFORE_MULTIPOLES
+    coordinate_rows = _block(body, 0, natoms, "atomic coordinates", path)
+    start = _find_title(body, natoms, _MULTIPOLE_TABLE_TITLE, "atomic multipoles", path)
+    start += _HEADER_LINES_BEFORE_MULTIPOLES
     multipole_rows = _block(body, start, natoms, "atomic multipoles", path)
     start += natoms + _HEADER_LINES_BEFORE_CLOUD
     cloud_rows = _block(body, start, natoms, "electron cloud parameters", path)
@@ -161,9 +174,9 @@ def read_ddec6_net_atomic_charges(path: StrPath) -> DDEC6Analysis:
         msg = f"{path}: {error}"
         raise ValueError(msg) from None
     coordinates = _table(coordinate_rows, range(1, 5), np.float64, path)
-    _check_atom_labels(multipole_rows, symbols, "atomic multipoles", path)
+    _check_rows(multipole_rows, symbols, _MULTIPOLE_COLUMNS, "atomic multipoles", path)
     multipoles = _table(multipole_rows, range(6, 15), np.float64, path)
-    _check_atom_labels(cloud_rows, symbols, "electron cloud parameters", path)
+    _check_rows(cloud_rows, symbols, _CLOUD_COLUMNS, "electron cloud parameters", path)
     cloud = _table(cloud_rows, range(5, 7), np.float64, path)
 
     return DDEC6Analysis(
@@ -297,16 +310,42 @@ def _table[T: np.generic](
         raise ValueError(msg) from None
 
 
-def _check_atom_labels(
-    rows: Sequence[str], symbols: Sequence[str], what: str, path: StrPath
+def _find_title(
+    lines: Sequence[str], start: int, title: str, what: str, path: StrPath
+) -> int:
+    """Find the first line from ``start`` on that begins with ``title``."""
+    found = (
+        index
+        for index, line in enumerate(lines[start:], start=start)
+        if line.lstrip().startswith(title)
+    )
+    index = next(found, None)
+    if index is None:
+        msg = f"{path}: missing the title of the {what} table, {title!r}"
+        raise ValueError(msg)
+    return index
+
+
+def _check_rows(
+    rows: Sequence[str], symbols: Sequence[str], columns: int, what: str, path: StrPath
 ) -> None:
-    """Check that table rows are numbered 1..n and name the same elements."""
+    """Check that table rows are numbered 1..n, name the same elements, and are whole.
+
+    Fortran prints a number too wide for its field as asterisks with no leading space,
+    which joins it to the previous column and shifts the columns after it.
+    """
     for number, (row, symbol) in enumerate(zip(rows, symbols, strict=True), start=1):
-        fields = row.split(maxsplit=2)
+        fields = row.split()
         if fields[:2] != [str(number), symbol]:
             msg = (
                 f"{path}: expected row {number} ({symbol}) of the {what}, "
                 f"found {row.strip()!r}"
+            )
+            raise ValueError(msg)
+        if len(fields) != columns:
+            msg = (
+                f"{path}: expected {columns} columns in row {number} of the {what}, "
+                f"found {len(fields)}"
             )
             raise ValueError(msg)
 

@@ -57,7 +57,9 @@ def test_quadrupole_components_map_to_tensor_elements(tmp_path: Path) -> None:
         "    1",
         "Nonperiodic system",
         "C      0.000000     0.000000     0.000000     0.000000",
-        *[f"header line {i}" for i in range(14)],
+        "Computational parameters:",
+        "The following XYZ coordinates are in angstroms.",
+        "multipole columns",
         "    1 C  0.0 0.0 0.0 0.0  0.1 0.2 0.3 0.4  1.0 2.0 3.0 4.0 6.0  0.0 0.0 0.0",
         "cloud header",
         "cloud columns",
@@ -112,6 +114,27 @@ def test_an_overflowed_atom_count_is_taken_from_the_rows(
     np.testing.assert_array_equal(analysis.cloud_b, expected.cloud_b)
 
 
+def test_reads_the_september_2017_release(
+    tmp_path: Path, co_charges: Path, co_lines: list[str]
+) -> None:
+    """Chargemol 3.5 lists one fitting radius where later versions list two densities.
+
+    That leaves 13 lines above the multipole table, not the 14 the QDR program skips.
+    """
+    first = next(i for i, line in enumerate(co_lines) if "density for electron" in line)
+    co_lines[first : first + 2] = [
+        "Minimum radius for electron cloud penetration fitting (pm) =    200"
+    ]
+    analysis = read_ddec6_net_atomic_charges(write(tmp_path / "c.xyz", co_lines))
+
+    expected = read_ddec6_net_atomic_charges(co_charges)
+    np.testing.assert_array_equal(analysis.atomic_dipoles, expected.atomic_dipoles)
+    np.testing.assert_array_equal(
+        analysis.atomic_quadrupoles, expected.atomic_quadrupoles
+    )
+    np.testing.assert_array_equal(analysis.cloud_b, expected.cloud_b)
+
+
 @pytest.mark.parametrize(
     ("lines", "message"),
     [
@@ -124,6 +147,7 @@ def test_an_overflowed_atom_count_is_taken_from_the_rows(
         (["2", "Periodic system"], "expected 'Nonperiodic system' or a jmolscript"),
         (["2", "unitcell [{ 1 2 3 }, { 4 5 6 }]"], "or a jmolscript unit cell"),
         (["2", "Nonperiodic system", "C 0 0 0 0"], "before all 2 rows of atomic"),
+        (["1", "Nonperiodic system", "C 0 0 0 0"], "missing the title of the atomic"),
     ],
 )
 def test_malformed_headers_are_rejected(
@@ -149,9 +173,28 @@ def test_unreadable_numbers_are_rejected(tmp_path: Path, co_lines: list[str]) ->
 
 def test_misaligned_tables_are_rejected(tmp_path: Path, co_lines: list[str]) -> None:
     """An extra header line shifts the multipole table, which the labels catch."""
-    co_lines.insert(6, "An unexpected extra header line")
+    title = next(i for i, line in enumerate(co_lines) if "XYZ coordinates" in line)
+    co_lines.insert(title + 1, "An unexpected extra header line")
 
     with pytest.raises(ValueError, match="expected row 1 \\(C\\) of the atomic multi"):
+        read_ddec6_net_atomic_charges(write(tmp_path / "c.xyz", co_lines))
+
+
+@pytest.mark.parametrize(
+    ("fields", "what"),
+    [
+        ("     0.132034    -0.000000", "atomic multipoles"),
+        ("     0.004975     0.450606", "electron cloud parameters"),
+    ],
+)
+def test_overflowed_fields_are_rejected(
+    tmp_path: Path, co_lines: list[str], fields: str, what: str
+) -> None:
+    """A field of asterisks joins the column before it and shifts the rest."""
+    row = next(i for i, line in enumerate(co_lines) if fields in line)
+    co_lines[row] = co_lines[row].replace(fields, fields[:13] + "*" * 13)
+
+    with pytest.raises(ValueError, match=f"columns in row 1 of the {what}, found"):
         read_ddec6_net_atomic_charges(write(tmp_path / "c.xyz", co_lines))
 
 
