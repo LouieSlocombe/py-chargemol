@@ -3,7 +3,8 @@
 py-chargemol computes quadrupole-dipole resorbed (QDR) point charges from a
 [Chargemol](https://ddec.sourceforge.net) DDEC6 analysis. It is a typed,
 NumPy-based Python port of T. A. Manz's QDR program (version April 9, 2025) and
-reproduces that program's results and output files.
+reproduces that program's results. Use it directly with Python arrays or existing
+Chargemol files; writing the reference program's output files is optional.
 
 QDR charges are meant for atom-centred point-charge models in classical force
 fields. They fold part of each atom's DDEC6 quadrupole and dipole into the point
@@ -28,10 +29,136 @@ for release notes.
 
 ## Usage
 
-QDR needs two files that Chargemol writes:
+### Python
+
+Read existing Chargemol output and return the computed arrays without writing
+any files:
+
+```python
+from py_chargemol import calculate_qdr
+
+result = calculate_qdr("path/to/chargemol/output")
+
+print(result.charges)  # QDR point charges, e, shape (n,)
+print(result.atomic_dipoles)  # residual dipoles, e·bohr, shape (n, 3)
+print(result.atomic_quadrupoles)  # residual quadrupoles, e·bohr², shape (n, 6)
+print(result.cg_iterations, result.residual_norm)  # solver diagnostics
+
+if result.moments is not None:
+    print(result.moments.charges.dipole_magnitude)
+    print(result.moments.with_dipoles.dipole_magnitude)
+    print(result.moments.with_quadrupoles.quadrupole_tensor)
+```
+
+`calculate_qdr(directory=".", *, charges_file=None, overlaps_file=None,
+max_cg_iterations=10, tolerance=1e-12)` returns a `QDRResult`. The directory
+defaults to the current directory. It discovers these input filenames:
 
 - `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
 - `overlap_populations_and_contact_exchanges.txt` (or `overlap_populations.txt`)
+
+Pass `charges_file` and `overlaps_file` to choose other input files. A
+nonperiodic single atom needs no overlap file and returns its original charge
+and atomic multipoles.
+
+For nonperiodic systems, `result.moments` contains the total molecular moments
+about the centre of mass at three levels: `charges` (point charges alone),
+`with_dipoles` (including residual atomic dipoles), and `with_quadrupoles`
+(including residual atomic quadrupoles too). Each provides a `dipole`,
+`dipole_magnitude`, `quadrupole`, `quadrupole_tensor`, and
+`quadrupole_eigenvalues`. For periodic systems, `result.moments` is `None`.
+
+#### Compute directly from arrays
+
+`compute_qdr_from_arrays` accepts Python lists or NumPy arrays, so an in-memory
+workflow needs no intermediate files or electron-cloud parameters. This
+synthetic two-atom example is runnable as written:
+
+```python
+from py_chargemol import compute_qdr_from_arrays
+
+result = compute_qdr_from_arrays(
+    atomic_numbers=[1, 1],
+    positions=[[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]],
+    net_charges=[0.1, -0.1],
+    atomic_dipoles=[[0.02, 0.0, 0.0], [0.02, 0.0, 0.0]],
+    atomic_quadrupoles=[[0.0] * 6, [0.0] * 6],
+    atom1=[0, 1],
+    atom2=[1, 0],
+    populations=[0.5, 0.5],
+)
+
+print(result.charges)
+print(result.atomic_dipoles)
+```
+
+The inputs describe `n` atoms and `m` directed overlap pairs:
+
+| Argument | Shape | Meaning and units |
+| --- | --- | --- |
+| `atomic_numbers` | `(n,)` | Atomic numbers |
+| `positions` | `(n, 3)` | Cartesian coordinates in bohr |
+| `net_charges` | `(n,)` | DDEC6 net atomic charges in e |
+| `atomic_dipoles` | `(n, 3)` | DDEC6 atomic dipoles in e·bohr |
+| `atomic_quadrupoles` | `(n, 6)` | Traceless DDEC6 quadrupoles in e·bohr², ordered `xx, xy, xz, yy, yz, zz` |
+| `atom1`, `atom2` | `(m,)` | Zero-based atom indices |
+| `populations` | `(m,)` | Bond overlap populations in e |
+| `translations` | `(m, 3)` | Integer lattice translations of the second atom; defaults to zero |
+| `lattice_vectors` | `(3, 3)` | Cell vectors as rows, in bohr; defaults to zero for a nonperiodic system |
+
+Each bond must appear in both directions with the same population, as in the
+example. For a periodic pair `(i, j)` with translation `t`, also supply `(j, i)`
+with translation `-t`. A zero cell-vector row marks a nonperiodic direction.
+All arguments are keyword-only; `max_cg_iterations=10` and `tolerance=1e-12`
+control the solver. The returned `QDRResult` has the same arrays, diagnostics,
+and moments as `calculate_qdr`.
+
+py-chargemol performs QDR resorption using supplied DDEC6 results. It does not
+run Chargemol or infer DDEC6 charges, multipoles, or overlap populations from
+atomic coordinates. The synthetic values above illustrate the API, not a
+physical DDEC6 analysis.
+
+#### Work with parsed analysis objects
+
+The readers, `DDEC6Analysis`, `OverlapPairs`, and pure `compute_qdr_charges`
+function are also available from the package root:
+
+```python
+from py_chargemol import (
+    DDEC6Analysis,
+    OverlapPairs,
+    compute_qdr_charges,
+    read_ddec6_net_atomic_charges,
+    read_overlap_populations,
+)
+
+analysis: DDEC6Analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
+pairs: OverlapPairs = read_overlap_populations(
+    "overlap_populations_and_contact_exchanges.txt"
+)
+result = compute_qdr_charges(analysis, pairs)
+```
+
+The readers convert Chargemol coordinates to bohr and pair indices to zero-based
+indices. `compute_qdr_charges` returns the same `QDRResult`, including molecular
+moments for nonperiodic systems, without writing files.
+
+#### Write the legacy output file
+
+Use `run_qdr` when you want to compute and write
+`QDR-DDEC6_point_charges.xyz`:
+
+```python
+from py_chargemol import run_qdr
+
+result = run_qdr("path/to/chargemol/output")
+```
+
+Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
+logging to capture it; the command-line interface creates the logfile
+automatically.
+
+### Chargemol input compatibility
 
 The Chargemol release on SourceForge (September 2017) writes an
 `overlap_populations.xyz` file, but not
@@ -57,48 +184,6 @@ Like the Fortran program, the command writes two files to that directory:
 
 `--charges`, `--overlaps`, `--output`, and `--log` choose other files. See
 `py-chargemol qdr --help`.
-
-### Python
-
-`run_qdr` computes the charges and writes `QDR-DDEC6_point_charges.xyz`:
-
-```python
-from py_chargemol.qdr import run_qdr
-
-result = run_qdr("path/to/chargemol/output")
-```
-
-Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
-logging to capture it; the command-line interface creates the logfile
-automatically.
-
-You can also run each step on its own:
-
-```python
-from py_chargemol.ddec6 import read_ddec6_net_atomic_charges, read_overlap_populations
-from py_chargemol.multipoles import total_multipole_moments
-from py_chargemol.qdr import compute_qdr_charges
-
-analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
-pairs = read_overlap_populations("overlap_populations_and_contact_exchanges.txt")
-result = compute_qdr_charges(analysis, pairs)
-
-print(result.charges)  # QDR point charges, e
-print(result.atomic_dipoles)  # residual atomic dipoles, e·bohr, shape (n, 3)
-print(result.atomic_quadrupoles)  # residual traceless quadrupoles, shape (n, 6)
-
-moments = total_multipole_moments(
-    analysis.atomic_numbers,
-    analysis.positions,
-    result.charges,
-    result.atomic_dipoles,
-    result.atomic_quadrupoles,
-)
-print(moments.with_dipoles.dipole_magnitude)
-```
-
-Arrays are in atomic units, with one row per atom. Quadrupoles are ordered
-`xx, xy, xz, yy, yz, zz`.
 
 ## Differences from the Fortran program
 
@@ -239,9 +324,10 @@ distribution first.
 │   ├── units.py                # unit conversions
 │   ├── __main__.py             # the py-chargemol command
 │   └── qdr/
+│       ├── arrays.py           # direct computation from Python and NumPy arrays
 │       ├── solver.py           # the QDR resorption passes
 │       ├── output.py           # QDR-DDEC6_point_charges.xyz writer
-│       └── run.py              # run_qdr, the end-to-end program
+│       └── run.py              # calculate_qdr and the legacy run_qdr writer
 ├── tests/                      # unit and worked-example regression tests
 ├── CHANGELOG.md                # release notes
 ├── RELEASE.md                  # release preparation and publishing

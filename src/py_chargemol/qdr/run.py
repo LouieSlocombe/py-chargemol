@@ -1,4 +1,4 @@
-"""Run QDR on a directory of Chargemol output, as the QDR program does."""
+"""Calculate QDR from Chargemol output, with optional legacy file export."""
 
 import logging
 import time
@@ -9,13 +9,14 @@ from typing import Final
 
 import numpy as np
 
-from py_chargemol import __version__
+from py_chargemol._version import __version__
 from py_chargemol.ddec6 import (
+    OverlapPairs,
     StrPath,
     read_ddec6_net_atomic_charges,
     read_overlap_populations,
 )
-from py_chargemol.multipoles import MultipoleMoments, total_multipole_moments
+from py_chargemol.multipoles import MultipoleMoments
 from py_chargemol.qdr.output import QDR_PROGRAM_VERSION, write_qdr_point_charges
 from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
 
@@ -38,6 +39,57 @@ LOG_FILE: Final = "QDR_charges_computation_logfile.txt"
 """Name of the QDR program's log file."""
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_qdr(
+    directory: StrPath = ".",
+    *,
+    charges_file: StrPath | None = None,
+    overlaps_file: StrPath | None = None,
+    max_cg_iterations: int = 10,
+    tolerance: float = 1e-12,
+) -> QDRResult:
+    """Return QDR results from a Chargemol directory without writing any files.
+
+    Args:
+        directory: Directory holding the Chargemol output files.
+        charges_file: Explicit charge file, relative to the current working
+            directory or absolute. Otherwise discover :data:`CHARGE_FILES`.
+        overlaps_file: Explicit overlap file, relative to the current working
+            directory or absolute. Otherwise discover :data:`OVERLAP_FILES`.
+        max_cg_iterations: Positive conjugate gradient iteration limit per step.
+        tolerance: Finite, nonnegative residual tolerance in each atomic solve.
+
+    Returns:
+        Charges, residual atomic multipoles, solver statistics, and total moments
+        for nonperiodic systems. A single nonperiodic atom retains its original
+        multipoles and needs no overlap file unless one is explicitly supplied.
+
+    Raises:
+        FileNotFoundError: If a required input file is missing.
+        ValueError: If the inputs or solver settings are invalid.
+
+    Use :func:`compute_qdr_charges` for data already in memory, or :func:`run_qdr`
+    to also write the QDR program's output file.
+    """
+    directory = Path(directory)
+    analysis = read_ddec6_net_atomic_charges(
+        _input_path(directory, charges_file, CHARGE_FILES)
+    )
+    if analysis.natoms == 1 and not analysis.is_periodic and overlaps_file is None:
+        pairs = OverlapPairs(
+            atom1=np.empty(0, np.int64),
+            atom2=np.empty(0, np.int64),
+            translations=np.empty((0, 3), np.int64),
+            populations=np.empty(0, np.float64),
+        )
+    else:
+        pairs = read_overlap_populations(
+            _input_path(directory, overlaps_file, OVERLAP_FILES)
+        )
+    return compute_qdr_charges(
+        analysis, pairs, max_cg_iterations=max_cg_iterations, tolerance=tolerance
+    )
 
 
 def run_qdr(
@@ -102,19 +154,12 @@ def run_qdr(
     logger.info("Most conjugate gradient iterations: %d", result.cg_iterations)
     logger.info("Largest final residual norm: %.7E", result.residual_norm)
 
-    moments = None
-    if analysis.is_periodic:
+    moments = result.moments
+    if moments is None:
         logger.info(
             "Since the system is periodic, total multipole moments are skipped."
         )
     else:
-        moments = total_multipole_moments(
-            analysis.atomic_numbers,
-            analysis.positions,
-            result.charges,
-            result.atomic_dipoles,
-            result.atomic_quadrupoles,
-        )
         _log_moments(moments)
 
     output_path = directory / OUTPUT_FILE if output_file is None else Path(output_file)

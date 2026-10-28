@@ -31,6 +31,8 @@ import numpy as np
 import numpy.typing as npt
 
 from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
+from py_chargemol.elements import ATOMIC_WEIGHTS
+from py_chargemol.multipoles import MultipoleMoments, total_multipole_moments
 
 type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
@@ -57,6 +59,9 @@ class QDRResult:
         cg_iterations: Most conjugate gradient iterations any atom took in any step.
         residual_norm: Largest L2 norm, over the steps, of the final conjugate
             gradient residual of all atoms together.
+        moments: Total molecular moments about the centre of mass, or ``None``
+            for periodic systems. Includes charges alone, with residual dipoles,
+            and with residual quadrupoles.
     """
 
     charges: FloatArray
@@ -64,6 +69,7 @@ class QDRResult:
     atomic_quadrupoles: FloatArray
     cg_iterations: int
     residual_norm: float
+    moments: MultipoleMoments | None = None
 
 
 def compute_qdr_charges(
@@ -73,7 +79,10 @@ def compute_qdr_charges(
     max_cg_iterations: int = 10,
     tolerance: float = 1e-12,
 ) -> QDRResult:
-    """Compute QDR point charges from a DDEC6 analysis.
+    """Compute QDR point charges from in-memory DDEC6 data without file I/O.
+
+    Input arrays are not modified. A system with no overlap pairs retains its
+    original charges and multipoles, including a single isolated atom.
 
     Args:
         analysis: DDEC6 net atomic charges, atomic multipoles, and geometry.
@@ -84,12 +93,32 @@ def compute_qdr_charges(
             residual is at most this.
 
     Returns:
-        The QDR point charges, residual atomic multipoles, and solver statistics.
+        The QDR point charges, residual atomic multipoles, solver statistics,
+        and total moments for nonperiodic systems.
 
     Raises:
-        ValueError: If a pair names an atom outside the analysis, or a bond has
-            zero length.
+        ValueError: If atomic numbers or solver settings are invalid, a pair
+            names an atom outside the analysis, or a bond has zero length.
     """
+    if (
+        analysis.atomic_numbers.ndim != 1
+        or analysis.natoms == 0
+        or analysis.atomic_numbers.dtype.kind not in "iu"
+        or np.any(
+            (analysis.atomic_numbers < 1)
+            | (analysis.atomic_numbers > len(ATOMIC_WEIGHTS))
+        )
+    ):
+        msg = (
+            "atomic_numbers must be a nonempty integer array "
+            f"in 1-{len(ATOMIC_WEIGHTS)}"
+        )
+        raise ValueError(msg)
+    _validate_iteration_limit(max_cg_iterations)
+    if not np.isfinite(tolerance) or tolerance < 0:
+        msg = "tolerance must be finite and nonnegative"
+        raise ValueError(msg)
+
     resorption = _Resorption(
         bonds=_Bonds.from_pairs(analysis, pairs),
         charges=analysis.net_charges.copy(),
@@ -103,13 +132,31 @@ def compute_qdr_charges(
             resorption.resorb_quadrupoles()
             resorption.resorb_dipoles()
 
+    moments = None
+    if not analysis.is_periodic:
+        moments = total_multipole_moments(
+            analysis.atomic_numbers,
+            analysis.positions,
+            resorption.charges,
+            resorption.dipoles,
+            resorption.quadrupoles,
+        )
+
     return QDRResult(
         charges=resorption.charges,
         atomic_dipoles=resorption.dipoles,
         atomic_quadrupoles=resorption.quadrupoles,
         cg_iterations=resorption.cg_iterations,
         residual_norm=resorption.residual_norm,
+        moments=moments,
     )
+
+
+def _validate_iteration_limit(value: object) -> None:
+    """Check runtime callers, including NumPy integers and untyped Python code."""
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
+        msg = "max_cg_iterations must be a positive integer"
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True, eq=False)

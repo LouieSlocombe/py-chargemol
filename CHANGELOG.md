@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add `calculate_qdr` to read existing Chargemol output and return QDR charges,
+  residual atomic multipoles, and solver diagnostics without writing files.
+- Add `compute_qdr_from_arrays` for direct computation from Python lists or NumPy
+  arrays, without intermediate files or electron-cloud parameters.
+- Include total molecular multipole moments in `QDRResult.moments` for
+  nonperiodic systems; periodic results use `None`.
+- Export the computation functions, DDEC6 readers, and analysis and overlap-pair
+  types from the package root. Preserve `run_qdr` and the command-line interface
+  for workflows that write the legacy output files.
+
 ## 0.1.0
 
 First release of the Python port of T. A. Manz's April 9, 2025 QDR program.
