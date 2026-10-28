@@ -128,8 +128,12 @@ requires:
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across
-  multiple geometric conformations?", submitted to RSC Advances, 2025.
+  multiple geometric conformations?", RSC Advances, Vol. 15 (2025) 23223-23265,
+  [doi:10.1039/D4RA07900K](https://doi.org/10.1039/D4RA07900K).
 - T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net.
+
+The output file keeps the Fortran program's citation text, which predates the
+paper's publication.
 
 ## Development
 
