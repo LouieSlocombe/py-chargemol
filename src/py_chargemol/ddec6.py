@@ -12,6 +12,7 @@ The layout handling follows the QDR program's Fortran list-directed reads, which
 blank lines. All quantities are converted to atomic units (bohr) on reading.
 """
 
+import itertools
 import os
 import re
 from collections.abc import Sequence
@@ -42,6 +43,9 @@ _CELL_NUMBERS: Final = 9
 """Numbers in a jmolscript unit cell: three lattice vectors."""
 
 _NUMBER: Final = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][-+]?\d+)?")
+
+_OVERFLOW: Final = re.compile(r"\*+")
+"""A Fortran fixed-width field too narrow for its integer, which prints as asterisks."""
 
 _ONE_THIRD: Final = 1.0 / 3.0
 
@@ -127,8 +131,11 @@ def read_ddec6_net_atomic_charges(path: StrPath) -> DDEC6Analysis:
     Raises:
         ValueError: If the file is empty or does not have the expected layout.
     """
-    count_line, *lines = _read_lines(path)
+    all_lines = _read_lines(path)
+    count_line, *lines = all_lines
     natoms = _parse_count(count_line, path)
+    if natoms is None:
+        natoms = _table_length(all_lines, skip=2)
     if natoms == 0:
         msg = f"{path}: the file lists no atoms"
         raise ValueError(msg)
@@ -184,8 +191,11 @@ def read_overlap_populations(path: StrPath) -> OverlapPairs:
     Raises:
         ValueError: If the file is empty or does not have the expected layout.
     """
-    lines = [line for line in _read_lines(path) if line.strip()]
+    all_lines = _read_lines(path)
+    lines = [line for line in all_lines if line.strip()]
     count = _parse_count(lines[0], path)
+    if count is None:
+        count = _table_length(all_lines, skip=1 + _HEADER_LINES_BEFORE_OVERLAPS)
     rows = _block(lines, 1 + _HEADER_LINES_BEFORE_OVERLAPS, count, "overlaps", path)
     if count == 0:
         return OverlapPairs(
@@ -215,9 +225,20 @@ def _read_lines(path: StrPath) -> list[str]:
     return lines
 
 
-def _parse_count(line: str, path: StrPath) -> int:
+def _parse_count(line: str, path: StrPath) -> int | None:
+    """Parse the count on a file's first line.
+
+    Chargemol writes the count in a five-character field, which Fortran fills with
+    asterisks once the count reaches 100,000.
+
+    Returns:
+        The count, or None if it overflowed its field.
+    """
     try:
-        count = int(line.split(maxsplit=1)[0])
+        field = line.split(maxsplit=1)[0]
+        if _OVERFLOW.fullmatch(field):
+            return None
+        count = int(field)
     except IndexError, ValueError:
         msg = f"{path}: expected a count on the first line, found {line.strip()!r}"
         raise ValueError(msg) from None
@@ -225,6 +246,16 @@ def _parse_count(line: str, path: StrPath) -> int:
         msg = f"{path}: the count on the first line is negative"
         raise ValueError(msg)
     return count
+
+
+def _table_length(lines: Sequence[str], skip: int) -> int:
+    """Count the rows of the table that follows the first ``skip`` non-blank lines.
+
+    Chargemol ends each table with a blank line, so the table runs up to the next one.
+    """
+    nonblank = (i for i, line in enumerate(lines) if line.strip())
+    start = next(itertools.islice(nonblank, skip, None), len(lines))
+    return sum(1 for _ in itertools.takewhile(str.strip, lines[start:]))
 
 
 def _parse_lattice(line: str, path: StrPath) -> FloatArray:

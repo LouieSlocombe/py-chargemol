@@ -38,8 +38,11 @@ QDR needs two files that Chargemol writes:
 - `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
 - `overlap_populations_and_contact_exchanges.txt` (or `overlap_populations.txt`)
 
-Older Chargemol releases do not write the overlap populations file. The QDR user
-guide explains how to get a version that does.
+The Chargemol release on SourceForge (September 2017) writes an
+`overlap_populations.xyz` file, but not
+`overlap_populations_and_contact_exchanges.txt`. The QDR user guide says a
+pre-release Chargemol version must be used to generate both input files, and
+explains how to request it.
 
 ### Command line
 
@@ -110,6 +113,9 @@ of its worked examples. Some implementation details differ:
   form.
 - Malformed input raises an error that names the file and line, where the
   Fortran could read garbage or stop silently.
+- Chargemol writes the atom and pair counts in five-character fields, which
+  print as `*****` from 100,000 on. The Fortran program stops on these; here
+  the count is taken from the number of rows in the table instead.
 - The output's version line names the py-chargemol version. The log file holds
   the same information in a different layout, and output files always use LF
   line endings.
@@ -128,8 +134,12 @@ requires:
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across
-  multiple geometric conformations?", submitted to RSC Advances, 2025.
+  multiple geometric conformations?", RSC Advances, Vol. 15 (2025) 23223-23265,
+  [doi:10.1039/D4RA07900K](https://doi.org/10.1039/D4RA07900K).
 - T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net.
+
+The output file keeps the Fortran program's citation text, which predates the
+paper's publication.
 
 ## Development
 
