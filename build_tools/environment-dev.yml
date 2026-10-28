@@ -18,8 +18,8 @@ dependencies:
   - numpy>=2.3.3
 
   # [dependency-groups] dev: locking, quality, and test
-  # The same uv series as the uv-lock hook and the uv_build backend, so uv.lock
-  # stays readable by both.
+  # uv provides the lockfile and build commands; the uv_build backend is
+  # configured separately in pyproject.toml.
   - uv>=0.12.24,<0.13
   - mypy>=2.4.0
   - prek>=0.5.5

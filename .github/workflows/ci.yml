@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -102,6 +103,9 @@ jobs:
       - name: Build the sdist and wheel
         run: uv build --no-sources
 
+      - name: Check distribution metadata
+        run: uvx --from twine twine check --strict dist/*
+
       - name: Smoke test the wheel
         run: uv run --isolated --no-project --with dist/*.whl py-chargemol --version
 
@@ -118,5 +122,5 @@ jobs:
 
     steps:
       - name: Fail if any required job did not succeed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        if: needs.lint.result != 'success' || needs.test.result != 'success' || needs.build.result != 'success'
         run: exit 1

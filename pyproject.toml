@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "py-chargemol"
-version = "0.0.0"
+version = "0.1.0"
 description = "Quadrupole-dipole resorbed (QDR) point charges from Chargemol DDEC6 analyses."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -43,6 +43,7 @@ py-chargemol = "py_chargemol.__main__:main"
 Homepage = "https://github.com/LouieSlocombe/py-chargemol"
 Issues = "https://github.com/LouieSlocombe/py-chargemol/issues"
 Repository = "https://github.com/LouieSlocombe/py-chargemol"
+Changelog = "https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -55,6 +56,12 @@ test = [
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
 ]
+
+[tool.uv.build-backend]
+# Keep the regression suite and its unmodified reference program available to
+# users of the sdist. The wheel contains only the Python package and license.
+source-include = ["CHANGELOG.md", "uv.lock", "tests/**", "QDR_program_04_09_2025/**"]
+source-exclude = ["/QDR_program_04_09_2025/linux_executables"]
 
 [tool.pytest]
 minversion = "9.1"

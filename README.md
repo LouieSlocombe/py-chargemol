@@ -16,20 +16,15 @@ atoms, use the DDEC6 net atomic charges, which are not resorbed.
 
 Python 3.14 or newer is required. NumPy is the only runtime dependency.
 
-With conda, create the `py-chargemol-dev` environment, which installs the
-package in editable mode with its development tools (see
-[`build_tools/`](build_tools/README.md)):
+Install the published package with pip:
 
 ```bash
-bash build_tools/conda_install.sh
-conda activate py-chargemol-dev
+python -m pip install py-chargemol
 ```
 
-With [uv](https://docs.astral.sh/uv/) 0.12 or newer:
-
-```bash
-uv sync
-```
+See [Development](#development) to install from a source checkout, and the
+[changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
+for release notes.
 
 ## Usage
 
@@ -65,13 +60,17 @@ Like the Fortran program, the command writes two files to that directory:
 
 ### Python
 
-`run_qdr` does the same as the command:
+`run_qdr` computes the charges and writes `QDR-DDEC6_point_charges.xyz`:
 
 ```python
 from py_chargemol.qdr import run_qdr
 
 result = run_qdr("path/to/chargemol/output")
 ```
+
+Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
+logging to capture it; the command-line interface creates the logfile
+automatically.
 
 You can also run each step on its own:
 
@@ -103,8 +102,10 @@ Arrays are in atomic units, with one row per atom. Quadrupoles are ordered
 
 ## Differences from the Fortran program
 
-The numbers agree with the Fortran program's to their last printed digit on all
-of its worked examples. Some implementation details differ:
+The regression tests compare every worked example with the Fortran program,
+allowing one unit in the last printed digit for rounding and checking tiny
+solver residuals against an absolute tolerance of `1e-10`. Some implementation
+details differ:
 
 - Each atom's conjugate gradient solve ran on its own OpenMP thread. Here they
   all run at once on NumPy arrays. Integers are 64-bit throughout, so the
@@ -123,13 +124,14 @@ of its worked examples. Some implementation details differ:
   print as `*****` from 100,000 on. The Fortran program stops on these; here
   the count is taken from the number of rows in the table instead.
 - The output's version line names the py-chargemol version. The log file holds
-  the same information in a different layout, and output files always use LF
-  line endings.
+  the same information in a different layout, and the XYZ output always uses
+  LF line endings.
 
 ## Reference program
 
-[`QDR_program_04_09_2025/`](QDR_program_04_09_2025) holds the original Fortran
-source, user guide, and worked examples, unmodified. The prebuilt executables
+[`QDR_program_04_09_2025/`](https://github.com/LouieSlocombe/py-chargemol/tree/main/QDR_program_04_09_2025)
+holds the original Fortran source, user guide, and worked examples, unmodified.
+The prebuilt executables
 are not tracked. The regression tests run every worked example and compare the
 output with the Fortran program's line by line.
 
@@ -148,6 +150,29 @@ The output file keeps the Fortran program's citation text, which predates the
 paper's publication.
 
 ## Development
+
+Clone the repository and enter its directory:
+
+```bash
+git clone https://github.com/LouieSlocombe/py-chargemol.git
+cd py-chargemol
+```
+
+With [uv](https://docs.astral.sh/uv/) 0.12 or newer, install the package in
+editable mode and its development tools:
+
+```bash
+uv sync
+```
+
+Alternatively, create the `py-chargemol-dev` conda environment, which also
+installs the package in editable mode with its development tools (see
+[`build_tools/`](https://github.com/LouieSlocombe/py-chargemol/blob/main/build_tools/README.md)):
+
+```bash
+bash build_tools/conda_install.sh
+conda activate py-chargemol-dev
+```
 
 Install the Git hooks once. They then run Ruff, lockfile, workflow security,
 and file hygiene checks before each commit. The hooks skip the reference
@@ -189,13 +214,16 @@ once a month, grouping each into a single pull request.
 ### Continuous integration
 
 Every push to `main` and every pull request runs the hooks and mypy, tests on
-Linux, macOS, and Windows with Python 3.14 and the upcoming 3.15, tests the
+Linux, macOS, and Windows with Python 3.14 and 3.15, tests the
 free-threaded 3.14t build and the oldest allowed dependencies, and builds and
 smoke tests the sdist and wheel. Require the **All checks passed** job in
 branch protection rather than each matrix entry.
 
 `release.yml` can publish to PyPI with trusted publishing when a GitHub release
-is published. Check that the license allows the distribution first.
+is published. Follow the
+[release guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/RELEASE.md)
+for preparation and publishing steps. Check that the license allows the
+distribution first.
 
 ## Project layout
 
@@ -215,6 +243,8 @@ is published. Check that the license allows the distribution first.
 │       ├── output.py           # QDR-DDEC6_point_charges.xyz writer
 │       └── run.py              # run_qdr, the end-to-end program
 ├── tests/                      # unit and worked-example regression tests
+├── CHANGELOG.md                # release notes
+├── RELEASE.md                  # release preparation and publishing
 ├── pyproject.toml              # project metadata and tool configuration
 └── uv.lock                     # pinned development dependencies
 ```
@@ -222,5 +252,7 @@ is published. Check that the license allows the distribution first.
 ## License
 
 py-chargemol is a derived work of the QDR program. It is distributed under the
-same terms, which [LICENSE](LICENSE) reproduces. Among them: derived works must
-keep these terms, and published results must cite the original research papers.
+same terms, which
+[LICENSE](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE)
+reproduces. Among them: derived works must keep these terms, and published
+results must cite the original research papers.

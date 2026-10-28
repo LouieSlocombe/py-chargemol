@@ -15,6 +15,12 @@ concurrency:
 permissions: {}
 
 jobs:
+  validate:
+    name: Validate the release
+    uses: $/.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
     name: Build distributions
     runs-on: ubuntu-latest
@@ -44,6 +50,15 @@ jobs:
       - name: Build the sdist and wheel
         run: uv build --no-sources
 
+      - name: Check distribution metadata
+        run: uvx --from twine twine check --strict dist/*
+
+      - name: Smoke test the wheel
+        run: uv run --isolated --no-project --with dist/*.whl py-chargemol --version
+
+      - name: Smoke test the sdist
+        run: uv run --isolated --no-project --with dist/*.tar.gz python -m py_chargemol --version
+
       - name: Upload the distributions
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -53,7 +68,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [validate, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
