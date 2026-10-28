@@ -69,6 +69,7 @@ def _qdr(arguments: argparse.Namespace) -> int:
         return _error(f"cannot write the log file: {error}")
     handler.setFormatter(logging.Formatter("%(message)s"))
     package_logger = logging.getLogger("py_chargemol")
+    previous_level = package_logger.level
     package_logger.addHandler(handler)
     package_logger.setLevel(logging.INFO)
     try:
@@ -82,6 +83,7 @@ def _qdr(arguments: argparse.Namespace) -> int:
         package_logger.error("%s. Program will terminate.", error)
         return _error(str(error))
     finally:
+        package_logger.setLevel(previous_level)
         package_logger.removeHandler(handler)
         handler.close()
 

@@ -112,11 +112,12 @@ def total_multipole_moments(
         The total moments at each order of the expansion.
     """
     origin = center_of_mass(atomic_numbers, positions)
-    x, y, z = (positions - origin).T
+    relative_positions = positions - origin
+    x, y, z = relative_positions.T
     dx, dy, dz = atomic_dipoles.T
     qxx, qxy, qxz, qyy, qyz, qzz = atomic_quadrupoles.T
 
-    charge_dipole = charges @ (positions - origin)
+    charge_dipole = charges @ relative_positions
     charge_quadrupole = charges @ np.column_stack(
         [x * y, x * z, y * z, x**2 - y**2, 3 * z * z - (x**2 + y**2 + z**2)]
     )

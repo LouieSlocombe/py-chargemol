@@ -145,21 +145,19 @@ def read_ddec6_net_atomic_charges(path: StrPath) -> DDEC6Analysis:
         ValueError: If the file is empty or does not have the expected layout.
     """
     all_lines = _read_lines(path)
-    count_line, *lines = all_lines
-    natoms = _parse_count(count_line, path)
+    natoms = _parse_count(all_lines[0], path)
     if natoms is None:
         natoms = _table_length(all_lines, skip=2)
     if natoms == 0:
         msg = f"{path}: the file lists no atoms"
         raise ValueError(msg)
-    if not lines:
+    if len(all_lines) == 1:
         msg = f"{path}: missing the periodicity line after the atom count"
         raise ValueError(msg)
-    cell_line, *lines = lines
-    lattice_vectors = _parse_lattice(cell_line, path) * BOHR_PER_ANGSTROM
+    lattice_vectors = _parse_lattice(all_lines[1], path) * BOHR_PER_ANGSTROM
 
     # Fortran list-directed reads skip blank records, so count non-blank lines only.
-    body = [line for line in lines if line.strip()]
+    body = [line for line in itertools.islice(all_lines, 2, None) if line.strip()]
     coordinate_rows = _block(body, 0, natoms, "atomic coordinates", path)
     start = _find_title(body, natoms, _MULTIPOLE_TABLE_TITLE, "atomic multipoles", path)
     start += _HEADER_LINES_BEFORE_MULTIPOLES

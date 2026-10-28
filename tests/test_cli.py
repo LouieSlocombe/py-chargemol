@@ -1,5 +1,6 @@
 """Tests for the package metadata and command-line interface."""
 
+import logging
 from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
@@ -126,6 +127,28 @@ def test_qdr_reports_an_unwritable_log(
     assert main(["qdr", str(tmp_path / "missing")]) == 1
 
     assert "cannot write the log file" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("level", [logging.NOTSET, logging.WARNING])
+@pytest.mark.parametrize(("missing_overlaps", "expected_exit"), [(False, 0), (True, 1)])
+def test_qdr_restores_logging_configuration(
+    co_inputs: Path,
+    caplog: pytest.LogCaptureFixture,
+    level: int,
+    missing_overlaps: bool,
+    expected_exit: int,
+) -> None:
+    """Calling the CLI leaves the caller's logging settings intact, even on error."""
+    caplog.set_level(level, logger="py_chargemol")
+    package_logger = logging.getLogger("py_chargemol")
+    previous_handlers = package_logger.handlers.copy()
+    if missing_overlaps:
+        (co_inputs / "overlap_populations_and_contact_exchanges.txt").unlink()
+
+    assert main(["qdr", str(co_inputs)]) == expected_exit
+
+    assert package_logger.level == level
+    assert package_logger.handlers == previous_handlers
 
 
 def test_qdr_skips_a_single_atom(
