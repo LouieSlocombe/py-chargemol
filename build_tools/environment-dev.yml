@@ -1,0 +1,33 @@
+# Conda environment for developing py-chargemol: everything in environment.yml,
+# plus the build, quality, and test tools, with py-chargemol installed editable.
+# Create it with build_tools/conda_install.sh.
+#
+# Mirrors pyproject.toml, which is the authoritative dependency list and sets the
+# version floors. Update this file when those dependencies change.
+name: py-chargemol-dev
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  - python=3.14
+  - pip>=25.1
+
+  # [project.dependencies]
+  - numpy>=2.3.3
+
+  # [dependency-groups] dev: locking, quality, and test
+  # The same uv series as the uv-lock hook and the uv_build backend, so uv.lock
+  # stays readable by both.
+  - uv>=0.12.24,<0.13
+  - mypy>=2.4.0
+  - prek>=0.5.5
+  - ruff>=0.16.10
+  - pytest>=9.1.1
+  - pytest-cov>=7.1.0
+
+  - pip:
+      # pip runs from this directory, so `..` is the repository root. Editable,
+      # so changes to the source take effect without reinstalling.
+      - --editable ..

@@ -1,4 +1,13 @@
-name: template-python
+# Conda environment for using py-chargemol. Install the package into it from the
+# repository root afterwards:
+#
+#   conda env create -f build_tools/environment.yml
+#   conda activate py-chargemol
+#   python -m pip install -e .
+#
+# Mirrors [project.dependencies] in pyproject.toml, which is the authoritative
+# dependency list. Update this file when those dependencies change.
+name: py-chargemol
 
 channels:
   - conda-forge
@@ -7,3 +16,4 @@ channels:
 dependencies:
   - python>=3.14
   - pip>=25.1
+  - numpy>=2.3.3
