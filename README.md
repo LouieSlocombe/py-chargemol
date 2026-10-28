@@ -110,6 +110,9 @@ of its worked examples. Some implementation details differ:
   form.
 - Malformed input raises an error that names the file and line, where the
   Fortran could read garbage or stop silently.
+- Chargemol writes the atom and pair counts in five-character fields, which
+  print as `*****` from 100,000 on. The Fortran program stops on these; here
+  the count is taken from the number of rows in the table instead.
 - The output's version line names the py-chargemol version. The log file holds
   the same information in a different layout, and output files always use LF
   line endings.

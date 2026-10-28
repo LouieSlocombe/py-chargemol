@@ -100,6 +100,18 @@ def test_a_zero_lattice_vector_is_a_nonperiodic_direction(
     np.testing.assert_allclose(analysis.lattice_vectors[2, 2], 5 * BOHR_PER_ANGSTROM)
 
 
+def test_an_overflowed_atom_count_is_taken_from_the_rows(
+    tmp_path: Path, co_charges: Path, co_lines: list[str]
+) -> None:
+    """Chargemol's five-character count field prints 100,000 atoms as *****."""
+    co_lines[0] = "*****"
+    analysis = read_ddec6_net_atomic_charges(write(tmp_path / "c.xyz", co_lines))
+
+    expected = read_ddec6_net_atomic_charges(co_charges)
+    assert analysis.natoms == expected.natoms == 2
+    np.testing.assert_array_equal(analysis.cloud_b, expected.cloud_b)
+
+
 @pytest.mark.parametrize(
     ("lines", "message"),
     [
@@ -107,6 +119,7 @@ def test_a_zero_lattice_vector_is_a_nonperiodic_direction(
         (["two", "Nonperiodic system"], "expected a count on the first line"),
         (["-1", "Nonperiodic system"], "the count on the first line is negative"),
         (["0", "Nonperiodic system"], "the file lists no atoms"),
+        (["*****", "Nonperiodic system"], "the file lists no atoms"),
         (["2"], "missing the periodicity line"),
         (["2", "Periodic system"], "expected 'Nonperiodic system' or a jmolscript"),
         (["2", "unitcell [{ 1 2 3 }, { 4 5 6 }]"], "or a jmolscript unit cell"),
@@ -185,6 +198,24 @@ def test_reads_the_older_overlap_layout(tmp_path: Path) -> None:
 
     np.testing.assert_array_equal(pairs.translations, [[0, 0, 1]])
     np.testing.assert_array_equal(pairs.populations, [0.25])
+
+
+@pytest.mark.parametrize("trailer", [["  "], []], ids=["blank line", "end of file"])
+def test_an_overflowed_pair_count_is_taken_from_the_rows(
+    tmp_path: Path, worked_examples: Path, trailer: list[str]
+) -> None:
+    """Chargemol's five-character count field prints 100,000 pairs as *****."""
+    alpo5 = worked_examples / "ALPO5" / "overlap_populations_and_contact_exchanges.txt"
+    _, *lines = alpo5.read_text().rstrip().splitlines()
+
+    pairs = read_overlap_populations(
+        write(tmp_path / "overlaps.txt", ["*****", *lines, *trailer])
+    )
+
+    expected = read_overlap_populations(alpo5)
+    assert len(pairs) == len(expected) == 2986
+    np.testing.assert_array_equal(pairs.translations, expected.translations)
+    np.testing.assert_array_equal(pairs.populations, expected.populations)
 
 
 def test_reads_an_empty_pair_list(tmp_path: Path) -> None:
