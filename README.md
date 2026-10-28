@@ -81,8 +81,8 @@ analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
 pairs = read_overlap_populations("overlap_populations_and_contact_exchanges.txt")
 result = compute_qdr_charges(analysis, pairs)
 
-print(result.charges)             # QDR point charges, e
-print(result.atomic_dipoles)      # residual atomic dipoles, e·bohr, shape (n, 3)
+print(result.charges)  # QDR point charges, e
+print(result.atomic_dipoles)  # residual atomic dipoles, e·bohr, shape (n, 3)
 print(result.atomic_quadrupoles)  # residual traceless quadrupoles, shape (n, 6)
 
 moments = total_multipole_moments(
