@@ -1,0 +1,42 @@
+    6
+jmolscript: load "" {1 1 1} spacegroup "x,y,z" unitcell [{      0.000000    15.000000     0.000000 }, {      0.000000     0.000000    15.000000 }, {     15.000000     0.000000     0.000000 }]
+H     14.544735     1.438770     0.000000     0.013273
+H     14.350305    13.463415     0.000000     0.326529
+H     13.066020    14.652105     0.000000     0.312380
+C      0.000000     0.421200     0.000000     0.454722
+N     14.055870    14.435505     0.000000    -0.637906
+O      1.205985     0.233745     0.000000    -0.468998
+ 
+The sum of net atomic charges in the unit cell is      0.000000
+Chargemol development version July 15, 2022        (Please see ddec.sourceforge.net for latest version.)
+ 
+Computational parameters:
+Number of radial integration shells =    100
+Cutoff radius (pm) =    500
+Error in the integrated total number of electrons before renormalization (e) =    1.0556E-04
+Charge convergence tolerance =    1.0000E-05
+Maximum density for electron cloud penetration fitting (pm) =    1.0000E-02
+Minimum density for electron cloud penetration fitting (pm) =    1.0000E-04
+Minimum decay exponent for electron density of buried atom tails =   1.7500
+Maximum decay exponent for electron density of buried atom tails =  2.5000
+Number of iterations to convergence =      7
+ 
+The following XYZ coordinates are in angstroms. The atomic dipoles and quadrupoles are in atomic units.
+atom #   symbol            x            y            z   net_charge     dipole_x     dipole_y     dipole_z   dipole_mag          Qxy          Qxz          Qyz   Q(x^2-y^2)  Q(3z^2-R^2)  3 traceless quadrupole moment tensor eigenvalues
+     1       H     14.544735     1.438770     0.000000     0.013273    -0.011140     0.067810    -0.000000     0.068719     0.017584    -0.000000     0.000000    -0.016452    -0.051068    -0.017023    -0.010902     0.027925
+     2       H     14.350305    13.463415     0.000000     0.326529     0.014981    -0.034554    -0.000000     0.037661     0.002355     0.000000     0.000000    -0.017186    -0.085519    -0.028506     0.005343     0.023163
+     3       H     13.066020    14.652105     0.000000     0.312380    -0.038841     0.009122     0.000000     0.039897    -0.000082    -0.000000     0.000000     0.012533    -0.116165    -0.038722     0.013094     0.025628
+     4       C      0.000000     0.421200     0.000000     0.454722    -0.000642    -0.074682    -0.000000     0.074684     0.020434    -0.000000    -0.000000    -0.080084     0.239652    -0.084897     0.005013     0.079884
+     5       N     14.055870    14.435505     0.000000    -0.637906     0.052264     0.018919     0.000000     0.055583     0.010859    -0.000000     0.000000     0.038708    -0.569188    -0.189729     0.072673     0.117057
+     6       O      1.205985     0.233745     0.000000    -0.468998    -0.048661     0.003438    -0.000000     0.048782    -0.004967    -0.000000    -0.000000     0.207918     0.243838    -0.144717     0.063438     0.081279
+ 
+The spherically averaged atomic electron density fit to a function exp(a - br) for r values having spherically averaged atomic electron density values between min_density_cloud_penetration and max_density_cloud_penetration.
+atom #   symbol            x            y            z            a            b     Rsquared  where a and b are in atomic units and Rsquared is the squared correlation coefficient
+     1       H     14.544735     1.438770     0.000000    -1.094631     2.257932     0.996199
+     2       H     14.350305    13.463415     0.000000    -1.419922     2.316293     0.995959
+     3       H     13.066020    14.652105     0.000000    -1.487078     2.262823     0.996267
+     4       C      0.000000     0.421200     0.000000     0.042990     2.041217     0.999762
+     5       N     14.055870    14.435505     0.000000     0.448954     2.121879     0.998942
+     6       O      1.205985     0.233745     0.000000     0.498113     2.205486     0.998772
+ 
+ 2024/11/14  13:09:45

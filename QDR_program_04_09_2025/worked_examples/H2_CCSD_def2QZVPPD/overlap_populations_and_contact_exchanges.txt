@@ -1,0 +1,6 @@
+    2
+Nonperiodic system
+ atom1  atom2  translation A  translation B  translation C  overlap population  contact exchange
+     1      2              0              0              0            0.555524          0.558064
+     2      1              0              0              0            0.555524          0.558064
+  

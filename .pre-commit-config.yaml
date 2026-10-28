@@ -1,3 +1,6 @@
+# The reference QDR program is kept exactly as distributed.
+exclude: ^QDR_program_04_09_2025/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

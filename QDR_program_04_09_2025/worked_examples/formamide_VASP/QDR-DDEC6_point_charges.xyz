@@ -1,0 +1,59 @@
+    6
+jmolscript: load "" {1 1 1} spacegroup "x,y,z" unitcell [{      0.000000    15.000000     0.000000 }, {      0.000000     0.000000    15.000000 }, {     15.000000     0.000000     0.000000 }]
+H     14.544735     1.438770     0.000000     0.008530
+H     14.350305    13.463415     0.000000     0.385719
+H     13.066020    14.652105     0.000000     0.359403
+C      0.000000     0.421200     0.000000     0.526808
+N     14.055870    14.435505     0.000000    -0.783229
+O      1.205985     0.233745     0.000000    -0.497231
+ 
+The sum of net atomic charges in the unit cell is      0.000000
+Two-pass QDR computed using QDR program version April 9, 2025                  
+ 
+For each QDR pass, conjugate gradient converged to the linear equation system solution within      3  CG iterations.
+The maximum final L2 (Euclidean) norm of the residual was     1.5992925E-016
+
+Advice on when to use these QDR point charges:
+These QDR point charges are strictly intended to be used for constructing atom-centered point charge models used in classical force fields.
+They partly re-absorb the atomic quadrupoles and dipoles into the point charges, thereby allowing an electrostatic model truncated at monopole order (i.e., an atom-centered point charge model) to more accurately reproduce the electrostatic potential surrounding the material.
+For chemical interpretation of electron transfer and for describing the chemical states of atoms in materials, please use the DDEC6 net atomic charges that are not quadrupole-dipole resorbed.
+
+Citation information:
+citation for computer program: T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net
+citation for method to compute QDR-DDEC6 charges: A. C. Escobosa and T. A. Manz, How well do various QM-derived net atomic charges reproduce the electrostatic potential surrounding a material across multiple geometric conformations?, submitted to RSC Advances, 2025.
+ 
+The XYZ coordinates for atoms at the top of this file are in angstroms.
+The following residual atomic dipoles are in atomic units.
+     dipole_x     dipole_y     dipole_z    dipole_magnitude
+<atomic dipoles>
+    -0.008500     0.061289     0.000000            0.061876
+     0.010597    -0.019927     0.000000            0.022570
+    -0.045658     0.010626     0.000000            0.046878
+     0.016392    -0.082054     0.000000            0.083675
+     0.064873     0.036416     0.000000            0.074395
+    -0.024234    -0.000545     0.000000            0.024240
+</atomic dipoles>
+ 
+The spherically averaged atomic electron density fit to a function exp(a - br) for r values having spherically averaged atomic electron density values between min_density_cloud_penetration and max_density_cloud_penetration.
+            a            b       where a and b are in atomic units
+<electron cloud parameters>
+    -1.094631     2.257932
+    -1.419922     2.316293
+    -1.487078     2.262823
+     0.042990     2.041217
+     0.448954     2.121879
+     0.498113     2.205486
+</electron cloud parameters>
+ 
+The following atomic quadrupoles are in atomic units.
+    (xx-rr/3)           xy           xz    (yy-rr/3)           yz    (zz-rr/3)
+<atomic traceless quadrupole cartesian tensor components>
+     0.001007     0.017304     0.000000     0.015351     0.000000    -0.016358
+     0.012171     0.009477     0.000000     0.007584     0.000000    -0.019755
+     0.005270     0.006658    -0.000000     0.022501     0.000000    -0.027771
+    -0.006308     0.002220     0.000000    -0.004404     0.000000     0.010711
+     0.017115    -0.003535     0.000000     0.014158     0.000000    -0.031273
+     0.009956     0.006822     0.000000    -0.118624     0.000000     0.108668
+</atomic traceless quadrupole cartesian tensor components>
+ 
+ 2025/04/09  13:09:52

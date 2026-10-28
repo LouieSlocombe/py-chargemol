@@ -1,0 +1,47 @@
+  
+ ******************** TIME CONTROL ********************
+ Entering QDR program.
+ QDR program version April 9, 2025                  
+ Copyright (c) 2025 by Thomas A. Manz. Rights reserved.
+ ******************************************************
+  
+ 2025/04/09  12:36:43
+  
+ **************** THREAD INFORMATION ******************
+ Job running using OpenMP.
+ The number of parallel threads is:            8
+ ******************************************************
+  
+ natoms:           72
+ vector1:    25.964835     0.000000     0.000000
+ vector2:   -12.982418    22.486207     0.000000
+ vector3:     0.000000     0.000000    16.013538
+   
+  
+ num_overlap_values:         2986
+  
+ Finished reading input file overlap_populations.txt
+  
+  
+ ******************** TIME CONTROL ********************
+ Input file reading took    1.0999999940395355E-002 seconds
+ ******************************************************
+  
+ Computing the QDR point charges
+  
+ ======================================================
+ Solving the QDR linear equation systems ...
+  
+ Solved QDR linear equation system in    4.8000000417232513E-002 seconds
+ ======================================================
+  
+  
+ ******************** TIME CONTROL ********************
+ Computing the QDR charges took    5.9000000357627869E-002 seconds
+ ******************************************************
+  
+  
+ ******************** TIME CONTROL ********************
+ Finished QDR program in    7.0000000298023224E-002 seconds
+ ******************************************************
+  

@@ -1,0 +1,47 @@
+    3
+Nonperiodic system
+C      0.000000     0.000000     0.000000     0.845592
+O      0.000000     0.000000     1.155306    -0.422796
+O      0.000000     0.000000    -1.155306    -0.422796
+ 
+Chargemol development version February 24, 2022   
+See ddec.sourceforge.net for latest version.
+ 
+Computational parameters:
+Number of radial integration shells =    100
+Cutoff radius (pm) =    500
+Error in the integrated total number of electrons before renormalization (e) =    8.7180E-11
+Charge convergence tolerance =    1.0000E-05
+Maximum density for electron cloud penetration fitting (pm) =    1.0000E-02
+Minimum density for electron cloud penetration fitting (pm) =    1.0000E-04
+Minimum decay exponent for electron density of buried atom tails =   1.7500
+Maximum decay exponent for electron density of buried atom tails =  2.5000
+Number of iterations to convergence =      7
+ 
+The following XYZ coordinates are in angstroms. The atomic dipoles and quadrupoles are in atomic units.
+atom #   symbol            x            y            z   net_charge     dipole_x     dipole_y     dipole_z   dipole_mag          Qxy          Qxz          Qyz   Q(x^2-y^2)  Q(3z^2-R^2)  3 traceless quadrupole moment tensor eigenvalues
+     1       C      0.000000     0.000000     0.000000     0.845592    -0.000000    -0.000000     0.000000     0.000000    -0.000000     0.000000     0.000000     0.000000    -0.495194    -0.165249     0.082624     0.082624
+     2       O      0.000000     0.000000     1.155306    -0.422796    -0.000000    -0.000000     0.093593     0.093593     0.000000    -0.000000    -0.000000    -0.000000     0.146050    -0.024038    -0.024038     0.048075
+     3       O      0.000000     0.000000    -1.155306    -0.422796    -0.000000    -0.000000    -0.093593     0.093593     0.000000     0.000000     0.000000    -0.000000     0.146050    -0.024038    -0.024038     0.048075
+ 
+The spherically averaged atomic electron density fit to a function exp(a - br) for r values having spherically averaged atomic electron density values between min_density_cloud_penetration and max_density_cloud_penetration.
+atom #   symbol            x            y            z            a            b     Rsquared  where a and b are in atomic units and Rsquared is the squared correlation coefficient
+     1       C      0.000000     0.000000     0.000000     0.465256     2.249961     0.999640
+     2       O      0.000000     0.000000     1.155306     1.098708     2.460540     0.999692
+     3       O      0.000000     0.000000    -1.155306     1.098717     2.460543     0.999692
+ 
+Since the system is non-periodic, the total dipole and quadrupole moments were computed relative to the system center of mass.
+Multipole moments (in atomic units) using the net atomic charges:
+Partial_charge_dipole_x =    0.0000   Partial_charge_dipole_y =    0.0000   Partial_charge_dipole_z =   -0.0000     Partial_charge_dipole_magnitude =    0.0000
+Partial_charge_quadrupole_xy =    0.0000   Partial_charge_quadrupole_xz =    0.0000   Partial_charge_quadrupole_yz =    0.0000   Partial_charge_quadrupole_x2minusy2 =    0.0000   Partial_charge_quadrupole_3z2minusr2 =   -8.0609
+Eigenvalues of traceless quadrupole moment tensor =   -2.6870   1.3435   1.3435
+Multipole moments (in atomic units) using the net atomic charges and atomic dipoles:
+Dipole_x =   -0.0000   Dipole_y =   -0.0000   Dipole_z =    0.0000   Dipole_magnitude =    0.0000
+Quadrupole_xy =    0.0000   Quadrupole_xz =   -0.0000   Quadrupole_yz =   -0.0000   Quadrupole_x2minusy2 =    0.0000   Quadrupole_3z2minusr2 =   -6.4262
+Eigenvalues of traceless quadrupole moment tensor =   -2.1421   1.0710   1.0710
+Multipole moments (in atomic units) using the net atomic charges, atomic dipoles, and atomic quadrupoles:
+Dipole_x =   -0.0000   Dipole_y =   -0.0000   Dipole_z =    0.0000   Dipole_magnitude =    0.0000
+Full_quadrupole_xy =   -0.0000   Full_quadrupole_xz =   -0.0000   Full_quadrupole_yz =   -0.0000   Full_quadrupole_x2minusy2 =    0.0000   Full_quadrupole_3z2minusr2 =   -6.6293
+Eigenvalues of traceless quadrupole moment tensor =   -2.2098   1.1049   1.1049
+  
+ 2022/02/25  15:12:04

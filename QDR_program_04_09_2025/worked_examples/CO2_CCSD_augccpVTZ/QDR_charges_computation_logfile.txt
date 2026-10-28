@@ -1,0 +1,82 @@
+  
+ ******************** TIME CONTROL ********************
+ Entering QDR program.
+ QDR program version April 9, 2025                  
+ Copyright (c) 2025 by Thomas A. Manz. Rights reserved.
+ ******************************************************
+  
+ 2025/05/05  13:53:43
+  
+ **************** THREAD INFORMATION ******************
+ Job running using OpenMP.
+ The number of parallel threads is:            8
+ ******************************************************
+  
+ natoms:            3
+Nonperiodic system
+   
+  
+ num_overlap_values:            6
+  
+ Finished reading input file overlap_populations.txt
+  
+  
+ ******************** TIME CONTROL ********************
+ Input file reading took    1.0000000474974513E-003 seconds
+ ******************************************************
+  
+ Computing the QDR point charges
+  
+ ======================================================
+ Solving the QDR linear equation systems ...
+  
+ Solved QDR linear equation system in    4.1000001132488251E-002 seconds
+ ======================================================
+  
+ center_of_mass:   0.000000  0.000000  0.000000
+  
+ Since the system is nonperiodic, total multipole moment analysis will be performed.
+ Total multipole moments are computed using the center of mass as the origin.
+ Dipole and quadrupole moments using the net atomic charges.
+ This corresponds to truncatating the distributed multipole expansion at monopole order.
+ partial_charge_dipole_x=      0.000000
+ partial_charge_dipole_y=      0.000000
+ partial_charge_dipole_z=      0.000000
+ partial_charge_dipole_magnitude     0.000000
+ partial_charge_quadrupole_xy=      0.000000
+ partial_charge_quadrupole_xz=      0.000000
+ partial_charge_quadrupole_yz=      0.000000
+ partial_charge_quadrupole_x2minusy2=      0.000000
+ partial_charge_quadrupole_3z2minusr2=     -7.458867
+ Dipole and quadrupole moments using the net atomic charges and the atomic dipoles.
+ This corresponds to truncatating the distributed multipole expansion at dipole order.
+ dipole_x=      0.000000
+ dipole_y=      0.000000
+ dipole_z =     -0.000000
+ dipole_magnitude=      0.000000
+ quadrupole_xy=      0.000000
+ quadrupole_xz=      0.000000
+ quadrupole_yz=      0.000000
+ quadrupole_x2minusy2=      0.000000
+ quadrupole_3z2minusr2 =     -6.638829
+ Dipole and quadrupole moments using the net atomic charges, atomic dipoles, and atomic quadrupoles.
+ This corresponds to truncatating the distributed multipole expansion at quadrupole order.
+ dipole_x=      0.000000
+ dipole_y=      0.000000
+ dipole_z=     -0.000000
+ dipole_magnitude=    6.9388939039072284E-018
+ full_quadrupole_xy=      0.000000
+ full_quadrupole_xz=      0.000000
+ full_quadrupole_yz=      0.000000
+ full_quadrupole_x2minusy2=      0.000000
+ full_quadrupole_3z2minusr2 =     -6.629310
+  
+ ******************** TIME CONTROL ********************
+ Computing the QDR charges took    4.5000001788139343E-002 seconds
+ ******************************************************
+  
+  
+ ******************** TIME CONTROL ********************
+ Finished QDR program in    4.6000000089406967E-002 seconds
+ ******************************************************
+  

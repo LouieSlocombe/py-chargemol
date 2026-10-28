@@ -36,3 +36,6 @@ htmlcov/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Prebuilt Fortran executables shipped with the reference QDR program
+QDR_program_04_09_2025/linux_executables/

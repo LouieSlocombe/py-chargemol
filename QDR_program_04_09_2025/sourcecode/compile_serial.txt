@@ -1,0 +1,15 @@
+gfortran \
+-o QDR_program_04_09_2025_serial -static-libgfortran \
+precise.f08 \
+common_variable_declarations.f08 \
+module_string_utilities.f08 \
+module_atomic_number_to_symbol.f08 \
+module_atomic_symbol_to_number.f08 \
+module_read_atomic_population_analysis_information.f08 \
+module_total_multipole_moment_analysis.f08 \
+module_QDR_point_charges.f08 \
+main_program.f08
+rm *.mod
+
+
+

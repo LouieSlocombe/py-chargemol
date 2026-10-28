@@ -1,0 +1,57 @@
+    2
+Nonperiodic system
+C      0.000000     0.000000     0.004975    -0.003964
+O      0.000000     0.000000     1.129925     0.003964
+ 
+The sum of net atomic charges in the unit cell is      0.000000
+Two-pass QDR computed using QDR program version April 9, 2025                  
+ 
+For each QDR pass, conjugate gradient converged to the linear equation system solution within      1  CG iterations.
+The maximum final L2 (Euclidean) norm of the residual was     2.2204460E-016
+
+Advice on when to use these QDR point charges:
+These QDR point charges are strictly intended to be used for constructing atom-centered point charge models used in classical force fields.
+They partly re-absorb the atomic quadrupoles and dipoles into the point charges, thereby allowing an electrostatic model truncated at monopole order (i.e., an atom-centered point charge model) to more accurately reproduce the electrostatic potential surrounding the material.
+For chemical interpretation of electron transfer and for describing the chemical states of atoms in materials, please use the DDEC6 net atomic charges that are not quadrupole-dipole resorbed.
+
+Citation information:
+citation for computer program: T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net
+citation for method to compute QDR-DDEC6 charges: A. C. Escobosa and T. A. Manz, How well do various QM-derived net atomic charges reproduce the electrostatic potential surrounding a material across multiple geometric conformations?, submitted to RSC Advances, 2025.
+ 
+The XYZ coordinates for atoms at the top of this file are in angstroms.
+The following residual atomic dipoles are in atomic units.
+     dipole_x     dipole_y     dipole_z    dipole_magnitude
+<atomic dipoles>
+     0.000000     0.000000     0.353166            0.353166
+     0.000000     0.000000    -0.321753            0.321753
+</atomic dipoles>
+ 
+The spherically averaged atomic electron density fit to a function exp(a - br) for r values having spherically averaged atomic electron density values between min_density_cloud_penetration and max_density_cloud_penetration.
+            a            b       where a and b are in atomic units
+<electron cloud parameters>
+     0.450606     2.069311
+     0.621995     2.344336
+</electron cloud parameters>
+ 
+The following atomic quadrupoles are in atomic units.
+    (xx-rr/3)           xy           xz    (yy-rr/3)           yz    (zz-rr/3)
+<atomic traceless quadrupole cartesian tensor components>
+     0.017772     0.000000     0.000000     0.017772     0.000000    -0.035543
+     0.003691     0.000000    -0.000000     0.003691    -0.000000    -0.007382
+</atomic traceless quadrupole cartesian tensor components>
+ 
+ Since the system is non-periodic, the total dipole and quadrupole moments were computed relative to the system center of mass.
+ Multipole moments (in atomic units) using the net atomic charges:
+ Partial_charge_dipole_x =    0.0000   Partial_charge_dipole_y =    0.0000   Partial_charge_dipole_z =    0.0084     Partial_charge_dipole_magnitude =    0.0084
+ Partial_charge_quadrupole_xy =    0.0000   Partial_charge_quadrupole_xz =    0.0000   Partial_charge_quadrupole_yz =    0.0000   Partial_charge_quadrupole_x2minusy2 =    0.0000   Partial_charge_quadrupole_3z2minusr2 =   -0.0051
+ Eigenvalues of traceless quadrupole moment tensor =   -0.0017   0.0009   0.0009
+ Multipole moments (in atomic units) using the net atomic charges and atomic dipoles:
+ Dipole_x =    0.0000   Dipole_y =    0.0000   Dipole_z =    0.0398   Dipole_magnitude =    0.0398
+ Quadrupole_xy =    0.0000   Quadrupole_xz =    0.0000   Quadrupole_yz =    0.0000   Quadrupole_x2minusy2 =    0.0000   Quadrupole_3z2minusr2 =   -2.8937
+ Eigenvalues of traceless quadrupole moment tensor =   -0.9646   0.4823   0.4823
+ Multipole moments (in atomic units) using the net atomic charges, atomic dipoles, and atomic quadrupoles:
+ Dipole_x =    0.0000   Dipole_y =    0.0000   Dipole_z =    0.0398   Dipole_magnitude =    0.0398
+ Full_quadrupole_xy =    0.0000   Full_quadrupole_xz =    0.0000   Full_quadrupole_yz =    0.0000   Full_quadrupole_x2minusy2 =    0.0000   Full_quadrupole_3z2minusr2 =   -3.0224
+ Eigenvalues of traceless quadrupole moment tensor =   -1.0075   0.5037   0.5037
+  
+ 2025/04/09  12:46:39
