@@ -1,13 +1,13 @@
 """Tests for the QDR point charge file writer."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from py_chargemol import __version__
-from py_chargemol.ddec6 import read_ddec6_net_atomic_charges, read_overlap_populations
+from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.qdr import compute_qdr_charges, format_qdr_point_charges
 from py_chargemol.qdr.output import fortran_es
 
@@ -30,12 +30,10 @@ def test_fortran_es_matches_the_es18_7e3_descriptor(
 
 
 @pytest.fixture
-def formamide_text(worked_examples: Path) -> str:
-    directory = worked_examples / "formamide_VASP"
-    analysis = read_ddec6_net_atomic_charges(directory / "DDEC6_net_atomic_charges.xyz")
-    pairs = read_overlap_populations(
-        directory / "overlap_populations_and_contact_exchanges.txt"
-    )
+def formamide_text(
+    load_example: Callable[[str], tuple[DDEC6Analysis, OverlapPairs]],
+) -> str:
+    analysis, pairs = load_example("formamide_VASP")
     result = compute_qdr_charges(analysis, pairs)
     timestamp = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
     return format_qdr_point_charges(analysis, result, None, timestamp)

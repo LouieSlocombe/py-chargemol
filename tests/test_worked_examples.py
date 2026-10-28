@@ -7,7 +7,7 @@ by one unit in their last printed digit, since the two programs round independen
 """
 
 import re
-import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -28,12 +28,6 @@ DATE = re.compile(r" \d{4}/\d{2}/\d{2}  \d{2}:\d{2}:\d{2}")
 VERSION = "Two-pass QDR computed using QDR program version April 9, 2025"
 
 
-def copy_inputs(source: Path, destination: Path) -> None:
-    for path in source.iterdir():
-        if path.name.startswith(("DDEC6", "overlap_populations")):
-            shutil.copy(path, destination)
-
-
 def assert_numbers_close(value: str, expected: str, where: str) -> None:
     if "E" in expected:  # the residual norm, which is round-off
         assert float(value) < 1e-10, where
@@ -45,13 +39,13 @@ def assert_numbers_close(value: str, expected: str, where: str) -> None:
 
 @pytest.mark.parametrize("example", EXAMPLES)
 def test_reproduces_the_reference_output(
-    worked_examples: Path, tmp_path: Path, example: str
+    worked_examples: Path, copy_example: Callable[[str], Path], example: str
 ) -> None:
-    copy_inputs(worked_examples / example, tmp_path)
+    directory = copy_example(example)
 
-    assert main(["qdr", str(tmp_path)]) == 0
+    assert main(["qdr", str(directory)]) == 0
 
-    ours = (tmp_path / "QDR-DDEC6_point_charges.xyz").read_text().splitlines()
+    ours = (directory / "QDR-DDEC6_point_charges.xyz").read_text().splitlines()
     reference_file = worked_examples / example / "QDR-DDEC6_point_charges.xyz"
     reference = reference_file.read_text().splitlines()
     assert len(ours) == len(reference)
@@ -69,12 +63,12 @@ def test_reproduces_the_reference_output(
                 assert_numbers_close(value, expected_value, where)
 
 
-def test_writes_a_log_file(worked_examples: Path, tmp_path: Path) -> None:
-    copy_inputs(worked_examples / "formamide_VASP", tmp_path)
+def test_writes_a_log_file(copy_example: Callable[[str], Path]) -> None:
+    directory = copy_example("formamide_VASP")
 
-    assert main(["qdr", str(tmp_path)]) == 0
+    assert main(["qdr", str(directory)]) == 0
 
-    log = (tmp_path / "QDR_charges_computation_logfile.txt").read_text()
+    log = (directory / "QDR_charges_computation_logfile.txt").read_text()
     assert "natoms: 6" in log
     assert "vector3:     28.345890     0.000000     0.000000" in log
     assert "num_overlap_values: 30" in log
@@ -82,12 +76,12 @@ def test_writes_a_log_file(worked_examples: Path, tmp_path: Path) -> None:
     assert "Finished QDR program in" in log
 
 
-def test_logs_molecular_moments(worked_examples: Path, tmp_path: Path) -> None:
-    copy_inputs(worked_examples / "CO_molecule", tmp_path)
+def test_logs_molecular_moments(copy_example: Callable[[str], Path]) -> None:
+    directory = copy_example("CO_molecule")
 
-    assert main(["qdr", str(tmp_path)]) == 0
+    assert main(["qdr", str(directory)]) == 0
 
-    log = (tmp_path / "QDR_charges_computation_logfile.txt").read_text()
+    log = (directory / "QDR_charges_computation_logfile.txt").read_text()
     assert "Nonperiodic system" in log
     assert "center_of_mass:   0.000000  0.000000  1.223688" in log
     assert "dipole_magnitude:      0.039840" in log

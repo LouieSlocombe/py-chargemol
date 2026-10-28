@@ -146,17 +146,19 @@ Run the complete local checks:
 ```bash
 uv run prek run --all-files
 uv run mypy
-uv run pytest
+uv run pytest --cov
 uv build
 ```
 
-In the conda environment, run the same tools without `uv run`. Ruff can apply
-safe lint and formatting changes with:
+`--cov` measures coverage and fails below 100%, as CI does. Leave it off to run a
+subset of the tests. Ruff can apply safe lint and formatting changes with:
 
 ```bash
 uv run ruff check --fix .
 uv run ruff format .
 ```
+
+In the conda environment, run the same tools without `uv run`.
 
 ### Dependencies
 

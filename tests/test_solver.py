@@ -1,29 +1,19 @@
 """Tests for the QDR solver."""
 
 import dataclasses
-from pathlib import Path
+from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 
-from py_chargemol.ddec6 import (
-    DDEC6Analysis,
-    OverlapPairs,
-    read_ddec6_net_atomic_charges,
-    read_overlap_populations,
-)
+from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.qdr import QDRResult, compute_qdr_charges
 
 type FloatArray = npt.NDArray[np.float64]
+type Loader = Callable[[str], tuple[DDEC6Analysis, OverlapPairs]]
 
 EXAMPLES = ["formamide_VASP", "BN_nanotube", "ALPO5", "CO2_CCSD_augccpVTZ"]
-
-
-def load(directory: Path) -> tuple[DDEC6Analysis, OverlapPairs]:
-    charges = next(directory.glob("DDEC6*net_atomic_charges.xyz"))
-    overlaps = directory / "overlap_populations_and_contact_exchanges.txt"
-    return read_ddec6_net_atomic_charges(charges), read_overlap_populations(overlaps)
 
 
 def tensor(components: FloatArray) -> FloatArray:
@@ -85,9 +75,9 @@ def dense_reference(analysis: DDEC6Analysis, pairs: OverlapPairs) -> QDRResult:
 
 
 @pytest.mark.parametrize("example", EXAMPLES)
-def test_matches_exact_dense_solves(worked_examples: Path, example: str) -> None:
+def test_matches_exact_dense_solves(load_example: Loader, example: str) -> None:
     """CG converges within its limit, so it agrees with direct solves."""
-    analysis, pairs = load(worked_examples / example)
+    analysis, pairs = load_example(example)
 
     result = compute_qdr_charges(analysis, pairs)
     expected = dense_reference(analysis, pairs)
@@ -104,24 +94,24 @@ def test_matches_exact_dense_solves(worked_examples: Path, example: str) -> None
 
 
 @pytest.mark.parametrize("example", EXAMPLES)
-def test_conserves_total_charge(worked_examples: Path, example: str) -> None:
-    analysis, pairs = load(worked_examples / example)
+def test_conserves_total_charge(load_example: Loader, example: str) -> None:
+    analysis, pairs = load_example(example)
 
     result = compute_qdr_charges(analysis, pairs)
 
     assert result.charges.sum() == pytest.approx(analysis.net_charges.sum(), abs=1e-12)
 
 
-def test_residual_quadrupoles_stay_traceless(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "ALPO5")
+def test_residual_quadrupoles_stay_traceless(load_example: Loader) -> None:
+    analysis, pairs = load_example("ALPO5")
 
     quadrupoles = compute_qdr_charges(analysis, pairs).atomic_quadrupoles
 
     np.testing.assert_allclose(quadrupoles[:, [0, 3, 5]].sum(axis=1), 0, atol=1e-12)
 
 
-def test_pair_order_does_not_matter(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "formamide_VASP")
+def test_pair_order_does_not_matter(load_example: Loader) -> None:
+    analysis, pairs = load_example("formamide_VASP")
     order = np.random.default_rng(0).permutation(len(pairs))
     shuffled = OverlapPairs(
         atom1=pairs.atom1[order],
@@ -139,8 +129,8 @@ def test_pair_order_does_not_matter(worked_examples: Path) -> None:
     )
 
 
-def test_inputs_are_not_modified(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "formamide_VASP")
+def test_inputs_are_not_modified(load_example: Loader) -> None:
+    analysis, pairs = load_example("formamide_VASP")
     before = analysis.net_charges.copy(), analysis.atomic_dipoles.copy()
 
     compute_qdr_charges(analysis, pairs)
@@ -149,8 +139,8 @@ def test_inputs_are_not_modified(worked_examples: Path) -> None:
     np.testing.assert_array_equal(analysis.atomic_dipoles, before[1])
 
 
-def test_no_pairs_leaves_the_ddec6_multipoles(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "formamide_VASP")
+def test_no_pairs_leaves_the_ddec6_multipoles(load_example: Loader) -> None:
+    analysis, pairs = load_example("formamide_VASP")
     empty = OverlapPairs(
         atom1=pairs.atom1[:0],
         atom2=pairs.atom2[:0],
@@ -169,8 +159,8 @@ def test_no_pairs_leaves_the_ddec6_multipoles(worked_examples: Path) -> None:
     assert result.residual_norm == 0.0
 
 
-def test_iteration_limit_is_respected(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "ALPO5")
+def test_iteration_limit_is_respected(load_example: Loader) -> None:
+    analysis, pairs = load_example("ALPO5")
 
     result = compute_qdr_charges(analysis, pairs, max_cg_iterations=1)
 
@@ -178,8 +168,8 @@ def test_iteration_limit_is_respected(worked_examples: Path) -> None:
     assert result.residual_norm > 1e-6
 
 
-def test_loose_tolerance_stops_early(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "ALPO5")
+def test_loose_tolerance_stops_early(load_example: Loader) -> None:
+    analysis, pairs = load_example("ALPO5")
 
     loose = compute_qdr_charges(analysis, pairs, tolerance=1e-3)
 
@@ -190,9 +180,9 @@ def test_loose_tolerance_stops_early(worked_examples: Path) -> None:
 @pytest.mark.parametrize("field", ["atom1", "atom2"])
 @pytest.mark.parametrize("index", [-1, 6])
 def test_pairs_must_name_atoms_in_the_analysis(
-    worked_examples: Path, field: str, index: int
+    load_example: Loader, field: str, index: int
 ) -> None:
-    analysis, pairs = load(worked_examples / "formamide_VASP")
+    analysis, pairs = load_example("formamide_VASP")
     atoms = getattr(pairs, field).copy()
     atoms[3] = index
 
@@ -200,8 +190,8 @@ def test_pairs_must_name_atoms_in_the_analysis(
         compute_qdr_charges(analysis, dataclasses.replace(pairs, **{field: atoms}))
 
 
-def test_bonds_must_have_length(worked_examples: Path) -> None:
-    analysis, pairs = load(worked_examples / "formamide_VASP")
+def test_bonds_must_have_length(load_example: Loader) -> None:
+    analysis, pairs = load_example("formamide_VASP")
     atom2 = pairs.atom2.copy()
     atom2[0] = pairs.atom1[0]
     translations = pairs.translations.copy()

@@ -25,7 +25,7 @@ The development tools run directly inside the environment:
 prek install                # once: run the hooks before each commit
 prek run --all-files
 mypy
-pytest
+pytest --cov                # --cov enforces 100% coverage; omit it for a subset
 uv lock                     # after changing dependencies in pyproject.toml
 ```
 

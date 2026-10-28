@@ -77,11 +77,11 @@ jobs:
 
       - name: Test with the locked dependencies
         if: matrix.resolution == 'locked'
-        run: uv run --locked --no-default-groups --group test pytest
+        run: uv run --locked --no-default-groups --group test pytest --cov
 
       - name: Test with the oldest allowed dependencies
         if: matrix.resolution == 'lowest-direct'
-        run: uv run --resolution lowest-direct --no-default-groups --group test pytest
+        run: uv run --resolution lowest-direct --no-default-groups --group test pytest --cov
 
   build:
     name: Build distributions

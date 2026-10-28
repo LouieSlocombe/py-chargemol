@@ -58,7 +58,9 @@ test = [
 
 [tool.pytest]
 minversion = "9.1"
-addopts = ["-ra", "--import-mode=importlib", "--cov", "--cov-report=term-missing"]
+# Coverage is opt-in (pytest --cov), so running a subset of the tests or a debugger
+# does not trip fail_under; CI always passes --cov.
+addopts = ["-ra", "--import-mode=importlib"]
 testpaths = ["tests"]
 strict = true
 filterwarnings = ["error"]

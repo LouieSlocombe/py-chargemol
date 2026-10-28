@@ -38,4 +38,4 @@ echo "py-chargemol: OK"
 
 echo "=== Install Complete! ==="
 echo "Activate with: conda activate ${ENV_NAME}"
-echo "Then run the checks with: prek run --all-files && mypy && pytest"
+echo "Then run the checks with: prek run --all-files && mypy && pytest --cov"

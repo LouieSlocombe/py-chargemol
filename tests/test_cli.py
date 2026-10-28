@@ -1,6 +1,6 @@
 """Tests for the package metadata and command-line interface."""
 
-import shutil
+from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
 
@@ -11,17 +11,9 @@ from py_chargemol.__main__ import build_parser, main
 
 
 @pytest.fixture
-def co_inputs(worked_examples: Path, tmp_path: Path) -> Path:
+def co_inputs(copy_example: Callable[[str], Path]) -> Path:
     """A directory with the CO example's Chargemol output."""
-    source = worked_examples / "CO_molecule"
-    directory = tmp_path / "co"
-    directory.mkdir()
-    for name in (
-        "DDEC6_even_tempered_net_atomic_charges.xyz",
-        "overlap_populations_and_contact_exchanges.txt",
-    ):
-        shutil.copy(source / name, directory)
-    return directory
+    return copy_example("CO_molecule")
 
 
 def test_version_matches_distribution_metadata() -> None:
