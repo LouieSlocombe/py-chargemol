@@ -52,9 +52,11 @@ def test_point_charges_give_charge_moments() -> None:
         atomic_quadrupoles=np.zeros((2, 6)),
     )
 
-    np.testing.assert_allclose(moments.center_of_mass, 0.0)
+    # The +a and -a terms cancel only to within rounding: a BLAS dot product that
+    # fuses multiply-adds leaves the rounding error of one product behind.
+    np.testing.assert_allclose(moments.center_of_mass, 0.0, atol=1e-15)
     np.testing.assert_allclose(moments.charges.dipole, [0.0, 0.0, 2 * q * a])
-    np.testing.assert_allclose(moments.charges.quadrupole, 0.0)
+    np.testing.assert_allclose(moments.charges.quadrupole, 0.0, atol=1e-15)
     assert moments.charges.dipole_magnitude == pytest.approx(2 * q * a)
 
 
