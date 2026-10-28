@@ -1,12 +1,9 @@
-# template-python
+# py-chargemol
 
-A compact starting point for a modern, typed Python package. It uses
+A Python port of T. A. Manz's QDR program for Chargemol DDEC6 analyses. It uses
 [uv](https://docs.astral.sh/uv/) for environments, locking, and builds, a `src`
 layout, Ruff, strict mypy, pytest with full branch coverage, prek hooks, and
 GitHub Actions with trusted publishing to PyPI.
-
-The example package exposes a tiny NumPy API and a command-line entry point so
-the template works end to end before you replace the sample code.
 
 ## Requirements
 
@@ -22,21 +19,11 @@ Create the environment with the package and its development tools:
 uv sync
 ```
 
-Run the example:
+Check the installed command:
 
 ```bash
-uv run template-python Ada
-uv run python -m template_python Ada
-```
-
-Or use the library:
-
-```python
-from template_python import line, print_hello
-
-print_hello("Ada")
-samples = line(-1.0, 1.0, num=5)
-print(samples)
+uv run py-chargemol --version
+uv run python -m py_chargemol --version
 ```
 
 ## Development
@@ -113,7 +100,7 @@ If you prefer Conda, see [`build_tools/`](build_tools/README.md).
 │   ├── dependabot.yml          # monthly grouped dependency updates
 │   └── workflows/              # CI and PyPI release
 ├── build_tools/                # optional Conda setup
-├── src/template_python/        # installable package
+├── src/py_chargemol/           # installable package
 ├── tests/                      # behavior-focused tests
 ├── .pre-commit-config.yaml     # Git hooks run by prek or pre-commit
 ├── .python-version             # development Python version for uv
@@ -121,19 +108,6 @@ If you prefer Conda, see [`build_tools/`](build_tools/README.md).
 └── uv.lock                     # pinned development dependencies
 ```
 
-## Use this template
-
-After creating a repository from this template:
-
-1. Rename the `template-python` distribution, `src/template_python` import
-   package, and console command.
-2. Update the description, author, repository URLs, and license metadata.
-3. Choose the Python versions your project supports in `requires-python`,
-   the classifiers, `.python-version`, and the CI matrix.
-4. Replace the example API and tests while keeping the quality gates green.
-5. Set a real release version and configure trusted publishing only when the
-   package is ready to publish.
-
 ## License
 
-Released under the [MIT License](LICENSE).
+Distributed under the QDR program's license terms; see [LICENSE](LICENSE).

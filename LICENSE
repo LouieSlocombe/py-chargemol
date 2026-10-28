@@ -1,21 +1,41 @@
-MIT License
+py-chargemol
 
-Copyright (c) 2026 Louie Slocombe
+Copyright (c) 2025 by Thomas A. Manz. Rights reserved.
+Python port copyright (c) 2026 Louie Slocombe.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+py-chargemol is a Python reimplementation of the QDR program (version April 9,
+2025) by Thomas A. Manz, which computes quadrupole-dipole resorbed (QDR) atomic
+charges. As a derived work of that program, it is distributed under exactly the
+same terms as the QDR program, reproduced below from section 5 of the QDR user
+guide (QDR_program_04_09_2025/User_Guide_QDR_program_04_09_2025.pdf).
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Software license:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This software is distributed under the license described below. You are not
+licensed to use or modify this software unless you agree to all of the licensing
+terms below:
+
+1. Derived Works and Integrity of The Author's Source Code: Derived works must be
+   distributed under exactly the same terms as this license. The source code is
+   restricted from being distributed in modified form; however, this license
+   allows the distribution of "patch files" with the source code for the purpose
+   of modifying the program at build time.
+
+2. Free Redistribution: The license does not restrict any party from selling or
+   giving away the software as a component of an aggregate software distribution
+   containing programs from several different sources. The license does not
+   require a royalty or other fee for such a sale. This license does not restrict
+   other software that may be distributed along with the licensed software.
+
+3. Source Code: The program includes source code, and allows distribution in
+   source code as well as compiled form. (Deliberately obfuscated source code and
+   intermediate forms such as the output of a preprocessor or translator are not
+   allowed.)
+
+4. Distribution of License: The rights attached to the program apply to all to
+   whom the program is redistributed without the need for execution of an
+   additional license by those parties.
+
+5. Scientific publications that use computational results of the program are
+   required to properly cite the original research papers describing the methods
+   used in the program, according to best scientific practice.

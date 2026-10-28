@@ -3,22 +3,33 @@ requires = ["uv_build>=0.12.24,<0.13"]
 build-backend = "uv_build"
 
 [project]
-name = "template-python"
+name = "py-chargemol"
 version = "0.0.0"
-description = "A modern, typed Python package template."
+description = "Quadrupole-dipole resorbed (QDR) point charges from Chargemol DDEC6 analyses."
 readme = "README.md"
 requires-python = ">=3.14"
-license = "MIT"
+# The QDR program's own license, which its derived works must keep (see LICENSE).
+license = "LicenseRef-QDR"
 license-files = ["LICENSE"]
 authors = [
+  { name = "Thomas A. Manz" },
   { name = "Louie Slocombe", email = "louies@hotmail.co.uk" },
 ]
-keywords = ["python", "template"]
+keywords = [
+  "chargemol",
+  "computational chemistry",
+  "DDEC6",
+  "force fields",
+  "point charges",
+  "QDR",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Chemistry",
   "Typing :: Typed",
 ]
 dependencies = [
@@ -26,12 +37,12 @@ dependencies = [
 ]
 
 [project.scripts]
-template-python = "template_python.__main__:main"
+py-chargemol = "py_chargemol.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/LouieSlocombe/template_python"
-Issues = "https://github.com/LouieSlocombe/template_python/issues"
-Repository = "https://github.com/LouieSlocombe/template_python"
+Homepage = "https://github.com/LouieSlocombe/py-chargemol"
+Issues = "https://github.com/LouieSlocombe/py-chargemol/issues"
+Repository = "https://github.com/LouieSlocombe/py-chargemol"
 
 [dependency-groups]
 dev = [
@@ -54,7 +65,7 @@ filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
-source_pkgs = ["template_python"]
+source_pkgs = ["py_chargemol"]
 
 [tool.coverage.report]
 fail_under = 100
