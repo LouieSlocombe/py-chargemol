@@ -38,8 +38,11 @@ QDR needs two files that Chargemol writes:
 - `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
 - `overlap_populations_and_contact_exchanges.txt` (or `overlap_populations.txt`)
 
-Older Chargemol releases do not write the overlap populations file. The QDR user
-guide explains how to get a version that does.
+The Chargemol release on SourceForge (September 2017) writes an
+`overlap_populations.xyz` file, but not
+`overlap_populations_and_contact_exchanges.txt`. The QDR user guide says a
+pre-release Chargemol version must be used to generate both input files, and
+explains how to request it.
 
 ### Command line
 
