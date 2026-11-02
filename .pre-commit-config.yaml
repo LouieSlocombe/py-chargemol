@@ -1,5 +1,5 @@
-# The reference QDR program is kept exactly as distributed.
-exclude: ^QDR_program_04_09_2025/
+# Reference fixtures are kept exactly as distributed.
+exclude: ^test/worked_examples/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

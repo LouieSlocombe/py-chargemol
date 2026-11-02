@@ -47,9 +47,8 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
    ```
 
    Both version commands must print the proposed release version. The wheel
-   includes `py.typed` and `LICENSE`; the sdist also includes the tests, lockfile,
-   and unmodified reference program and worked examples. Prebuilt Fortran
-   executables are excluded.
+   includes `py.typed` and `LICENSE`; the sdist also includes the lockfile and
+   the tests with their unmodified worked-example fixtures under `test/`.
 3. Review and commit the release changes, push them for review, and require the
    **All checks passed** CI result on the exact commit being released. CI covers
    Linux, macOS, and Windows, Python 3.14 and 3.15, free-threaded 3.14, and the

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove the bundled QDR program and keep tests and their required reference
+  fixtures under `test/` (#11).
 - Add `calculate_qdr` to read existing Chargemol output and return QDR charges,
   residual atomic multipoles, and solver diagnostics without writing files.
 - Add `compute_qdr_from_arrays` for direct computation from Python lists or NumPy

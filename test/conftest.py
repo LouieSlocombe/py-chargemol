@@ -1,4 +1,4 @@
-"""Shared fixtures: the worked examples that ship with the reference QDR program."""
+"""Shared fixtures: inputs and reference outputs from the QDR worked examples."""
 
 import shutil
 from collections.abc import Callable
@@ -13,9 +13,7 @@ from py_chargemol.ddec6 import (
     read_overlap_populations,
 )
 
-WORKED_EXAMPLES = (
-    Path(__file__).resolve().parents[1] / "QDR_program_04_09_2025" / "worked_examples"
-)
+WORKED_EXAMPLES = Path(__file__).resolve().parent / "worked_examples"
 
 CHARGEMOL_OUTPUTS = ("DDEC6", "overlap_populations")
 """Name prefixes of the Chargemol files that are the QDR program's input."""

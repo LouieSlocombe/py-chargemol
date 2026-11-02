@@ -6,8 +6,8 @@ Python port copyright (c) 2026 Louie Slocombe.
 py-chargemol is a Python reimplementation of the QDR program (version April 9,
 2025) by Thomas A. Manz, which computes quadrupole-dipole resorbed (QDR) atomic
 charges. As a derived work of that program, it is distributed under exactly the
-same terms as the QDR program, reproduced below from section 5 of the QDR user
-guide (QDR_program_04_09_2025/User_Guide_QDR_program_04_09_2025.pdf).
+same terms as the QDR program, reproduced below from section 5 of the original
+April 9, 2025 QDR user guide.
 
 Software license:
 

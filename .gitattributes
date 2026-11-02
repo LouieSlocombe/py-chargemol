@@ -4,5 +4,5 @@
 
 uv.lock linguist-generated=true
 
-# The reference QDR program is kept byte-for-byte as distributed (CRLF line endings).
-QDR_program_04_09_2025/** -text linguist-vendored
+# Reference fixtures are kept byte-for-byte as distributed (CRLF line endings).
+test/worked_examples/** -text linguist-vendored

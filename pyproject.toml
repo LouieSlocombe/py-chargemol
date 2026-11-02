@@ -58,17 +58,16 @@ test = [
 ]
 
 [tool.uv.build-backend]
-# Keep the regression suite and its unmodified reference program available to
+# Keep the regression suite and its unmodified reference fixtures available to
 # users of the sdist. The wheel contains only the Python package and license.
-source-include = ["CHANGELOG.md", "uv.lock", "tests/**", "QDR_program_04_09_2025/**"]
-source-exclude = ["/QDR_program_04_09_2025/linux_executables"]
+source-include = ["CHANGELOG.md", "uv.lock", "test/**"]
 
 [tool.pytest]
 minversion = "9.1"
 # Coverage is opt-in (pytest --cov), so running a subset of the tests or a debugger
 # does not trip fail_under; CI always passes --cov.
 addopts = ["-ra", "--import-mode=importlib"]
-testpaths = ["tests"]
+testpaths = ["test"]
 strict = true
 filterwarnings = ["error"]
 
@@ -131,9 +130,9 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = [
+"test/**" = [
   "D1",      # docstrings are welcome in tests but not required
-  "INP001",  # pytest's importlib mode does not need tests/__init__.py
+  "INP001",  # pytest's importlib mode does not need test/__init__.py
   "PLR2004", # literal expected values are clearer in assertions
   "S101",    # pytest uses bare assert statements
 ]
@@ -142,7 +141,7 @@ select = [
 convention = "google"
 
 [tool.mypy]
-files = ["src", "tests"]
+files = ["src", "test"]
 python_version = "3.14"
 strict = true
 warn_unreachable = true

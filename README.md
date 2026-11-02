@@ -212,13 +212,13 @@ details differ:
   the same information in a different layout, and the XYZ output always uses
   LF line endings.
 
-## Reference program
+## Reference fixtures
 
-[`QDR_program_04_09_2025/`](https://github.com/LouieSlocombe/py-chargemol/tree/main/QDR_program_04_09_2025)
-holds the original Fortran source, user guide, and worked examples, unmodified.
-The prebuilt executables
-are not tracked. The regression tests run every worked example and compare the
-output with the Fortran program's line by line.
+`test/worked_examples/` holds the Chargemol inputs and reference QDR charge
+outputs from the six worked examples distributed with T. A. Manz's April 9,
+2025 QDR program. These files are preserved unmodified. The regression tests
+run every example and compare the output with the Fortran program's reference
+output line by line.
 
 ## Citation
 
@@ -261,7 +261,7 @@ conda activate py-chargemol-dev
 
 Install the Git hooks once. They then run Ruff, lockfile, workflow security,
 and file hygiene checks before each commit. The hooks skip the reference
-program.
+fixture data in `test/worked_examples/` to preserve the original files.
 
 ```bash
 uv run prek install
@@ -315,7 +315,6 @@ distribution first.
 ```text
 .
 ├── .github/                    # CI, PyPI release, and Dependabot
-├── QDR_program_04_09_2025/     # the reference Fortran program, unmodified
 ├── build_tools/                # conda environments and install script
 ├── src/py_chargemol/
 │   ├── ddec6.py                # readers for Chargemol's DDEC6 output
@@ -328,7 +327,8 @@ distribution first.
 │       ├── solver.py           # the QDR resorption passes
 │       ├── output.py           # QDR-DDEC6_point_charges.xyz writer
 │       └── run.py              # calculate_qdr and the legacy run_qdr writer
-├── tests/                      # unit and worked-example regression tests
+├── test/                       # unit and worked-example regression tests
+│   └── worked_examples/        # unmodified reference inputs and QDR outputs
 ├── CHANGELOG.md                # release notes
 ├── RELEASE.md                  # release preparation and publishing
 ├── pyproject.toml              # project metadata and tool configuration
