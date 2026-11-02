@@ -7,6 +7,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from py_chargemol import __version__
+from py_chargemol.density.analysis import compute_ddec
+from py_chargemol.density.output import write_density_results
+from py_chargemol.density.workflow import JobControl, read_density, read_job_control
 from py_chargemol.qdr.run import LOG_FILE, OUTPUT_FILE, run_qdr
 
 
@@ -14,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Create the command-line argument parser."""
     parser = argparse.ArgumentParser(
         prog="py-chargemol",
-        description="Post-process Chargemol DDEC6 atomic population analyses.",
+        description="Compute DDEC atomic populations and QDR charges in Python.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -51,13 +54,112 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"QDR point charge file (default: DIR/{OUTPUT_FILE})",
     )
     qdr.add_argument("--log", type=Path, help=f"log file (default: DIR/{LOG_FILE})")
+    analyze = commands.add_parser(
+        "analyze",
+        help="compute DDEC charges and QDR directly from an electron density",
+        description=(
+            "Partition an electron-density grid in Python, using bundled atomic "
+            "reference densities, and write the DDEC and QDR results."
+        ),
+    )
+    analyze.add_argument(
+        "source", type=Path, help="density file or calculation directory"
+    )
+    analyze.add_argument(
+        "--format", choices=("auto", "cube", "vasp", "xsf", "wfx"), default="auto"
+    )
+    analyze.add_argument(
+        "--method",
+        choices=("ddec6", "ddec3"),
+        help="charge partition (default: job_control.txt setting or ddec6)",
+    )
+    analyze.add_argument("--charge", type=float, help="total system charge in e")
+    analyze.add_argument(
+        "--periodic",
+        nargs=3,
+        type=int,
+        choices=(0, 1),
+        metavar=("A", "B", "C"),
+        help="periodic directions: 1 for periodic, 0 for nonperiodic",
+    )
+    analyze.add_argument(
+        "--core-electrons",
+        nargs="+",
+        type=float,
+        metavar="N",
+        help="core electron count for each atom (required for valence-only cubes)",
+    )
+    analyze.add_argument("--density-kind", choices=("total", "valence"))
+    analyze.add_argument("--output-dir", type=Path, default=Path())
+    analyze.add_argument(
+        "--no-qdr", action="store_true", help="write only the DDEC analysis"
+    )
+    analyze.add_argument(
+        "--atomic-densities",
+        action=argparse.BooleanOptionalAction,
+        help="write spherical atomic densities (default: job_control.txt setting)",
+    )
+    analyze.add_argument(
+        "--bonds",
+        action=argparse.BooleanOptionalAction,
+        help="compute bonds and radial moments (default: job_control.txt or enabled)",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
     arguments = build_parser().parse_args(argv)
+    if arguments.command == "analyze":
+        return _analyze(arguments)
     return _qdr(arguments)
+
+
+def _analyze(arguments: argparse.Namespace) -> int:
+    periodic = None
+    if arguments.periodic is not None:
+        a, b, c = arguments.periodic
+        periodic = bool(a), bool(b), bool(c)
+    try:
+        directory = (
+            arguments.source if arguments.source.is_dir() else arguments.source.parent
+        )
+        control_path = directory / "job_control.txt"
+        control = (
+            read_job_control(control_path) if control_path.is_file() else JobControl()
+        )
+        method = arguments.method or control.charge_type or "ddec6"
+        atomic_densities = (
+            control.print_atomic_densities
+            if arguments.atomic_densities is None
+            else arguments.atomic_densities
+        )
+        compute_bos = (
+            control.compute_bos is not False
+            if arguments.bonds is None
+            else arguments.bonds
+        )
+        grid = read_density(
+            arguments.source,
+            format=arguments.format,
+            periodic=periodic,
+            net_charge=arguments.charge,
+            core_electrons=arguments.core_electrons,
+            density_kind=arguments.density_kind,
+        )
+        result = compute_ddec(grid, method=method, compute_bos=compute_bos)
+        paths = write_density_results(
+            result,
+            arguments.output_dir,
+            qdr=method == "ddec6" and not arguments.no_qdr and compute_bos,
+            atomic_densities=bool(atomic_densities) and compute_bos,
+        )
+    except (OSError, ValueError) as error:
+        return _error(str(error), command="analyze")
+    print(f"Computed {method.upper()} for {grid.natoms} atoms")
+    for name, path in paths.items():
+        print(f"Wrote {name} to {path}")
+    return 0
 
 
 def _qdr(arguments: argparse.Namespace) -> int:
@@ -95,8 +197,8 @@ def _qdr(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _error(message: str) -> int:
-    print(f"py-chargemol qdr: error: {message}", file=sys.stderr)
+def _error(message: str, *, command: str = "qdr") -> int:
+    print(f"py-chargemol {command}: error: {message}", file=sys.stderr)
     return 1
 
 

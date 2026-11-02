@@ -5,14 +5,15 @@ build-backend = "uv_build"
 [project]
 name = "py-chargemol"
 version = "0.1.0"
-description = "Quadrupole-dipole resorbed (QDR) point charges from Chargemol DDEC6 analyses."
+description = "DDEC6, DDEC3, and QDR atomic charges from electron densities in Python."
 readme = "README.md"
 requires-python = ">=3.14"
-# The QDR program's own license, which its derived works must keep (see LICENSE).
-license = "LicenseRef-QDR"
-license-files = ["LICENSE"]
+# Retain the terms of both original programs and their reference data.
+license = "LicenseRef-QDR AND LicenseRef-Chargemol"
+license-files = ["LICENSE", "LICENSE-CHARGEMOL"]
 authors = [
   { name = "Thomas A. Manz" },
+  { name = "Nidia Gabaldon Limas" },
   { name = "Louie Slocombe", email = "louies@hotmail.co.uk" },
 ]
 keywords = [
@@ -60,7 +61,7 @@ test = [
 [tool.uv.build-backend]
 # Keep the regression suite and its unmodified reference fixtures available to
 # users of the sdist. The wheel contains only the Python package and license.
-source-include = ["CHANGELOG.md", "uv.lock", "test/**"]
+source-include = ["CHANGELOG.md", "uv.lock", "test/**", "build_tools/smoke_install.py"]
 
 [tool.pytest]
 minversion = "9.1"

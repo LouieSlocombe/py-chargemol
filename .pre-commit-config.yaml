@@ -1,5 +1,5 @@
 # Reference fixtures are kept exactly as distributed.
-exclude: ^test/worked_examples/
+exclude: ^test/(worked_examples/|density_examples/.*\.wfx$)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

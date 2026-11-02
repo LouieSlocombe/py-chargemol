@@ -6,3 +6,4 @@ uv.lock linguist-generated=true
 
 # Reference fixtures are kept byte-for-byte as distributed (CRLF line endings).
 test/worked_examples/** -text linguist-vendored
+test/density_examples/*.wfx -text linguist-vendored
