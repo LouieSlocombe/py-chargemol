@@ -9,7 +9,20 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from py_chargemol.density.grid import NSHELLS, SCALE, ZERO, AtomicSample
+from py_chargemol.density.grid import (
+    NSHELLS,
+    SCALE,
+    ZERO,
+    AtomicSample,
+    sum_radial_weights,
+)
+
+__all__ = [
+    "CoreResult",
+    "dominant_occupancy_correction",
+    "partition_core",
+    "sum_radial_weights",
+]
 
 _MINIMUM_CORE_ITERATIONS = 6
 _CHARGE_TOLERANCE = 1e-5
@@ -23,18 +36,6 @@ class CoreResult:
     populations: np.ndarray
     weights: np.ndarray
     pseudodensity: np.ndarray
-
-
-def sum_radial_weights(
-    weights: np.ndarray, samples: Sequence[AtomicSample], size: int
-) -> np.ndarray:
-    """Accumulate radial atomic weights onto the periodic or molecular grid."""
-    result = np.zeros(size)
-    for radial, sample in zip(weights, samples, strict=True):
-        result += np.bincount(
-            sample.indices, weights=radial[sample.shells], minlength=size
-        )
-    return result
 
 
 def partition_core(

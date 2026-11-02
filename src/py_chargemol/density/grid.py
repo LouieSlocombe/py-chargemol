@@ -3,8 +3,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import product
+from typing import Protocol
 
 import numpy as np
+import numpy.typing as npt
 
 from py_chargemol.units import BOHR_PER_ANGSTROM
 
@@ -14,6 +16,20 @@ SCALE = NSHELLS / CUTOFF
 ZERO = 1e-10
 _DIMENSIONS = 3
 _MAX_ATOMIC_NUMBER = 109
+
+
+class RadialSample(Protocol):
+    """Grid indices and radial shells shared by all density partitions."""
+
+    @property
+    def indices(self) -> npt.NDArray[np.int64]:
+        """Flat grid indices, including repeated periodic images."""
+        ...
+
+    @property
+    def shells(self) -> npt.NDArray[np.int64]:
+        """Zero-based radial shell of each sampled point."""
+        ...
 
 
 @dataclass
@@ -160,18 +176,12 @@ class AtomicSample:
 def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
     """Construct finite-radius integration domains, including periodic images."""
     inverse = np.linalg.inv(grid.steps)
-    lengths = np.linalg.norm(grid.steps, axis=1)
-    cosines = grid.steps @ grid.steps.T / np.outer(lengths, lengths)
-    sines = np.sqrt(np.maximum(1.0 - cosines**2, 0.0))
-    np.fill_diagonal(sines, 1.0)
-    # Preserve the original Chargemol integration parallelepiped, including
-    # its extra voxel on each side, for consistent grid quadrature.
-    extent = np.ceil(CUTOFF / (sines.min(axis=1) * lengths)).astype(np.int64) + 1
+    extent = integration_extent(grid.steps)
     shape = np.asarray(grid.density.shape)
     result = []
     for position in grid.positions:
         center = (position - grid.origin) @ inverse
-        nearest = (np.sign(center) * np.floor(np.abs(center) + 0.5)).astype(np.int64)
+        nearest = nearest_grid_points(center)
         lower = nearest - extent
         upper = nearest + extent
         for axis, periodic in enumerate(grid.periodic):
@@ -202,12 +212,41 @@ def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
     return tuple(result)
 
 
+def sum_radial_weights(
+    weights: npt.NDArray[np.float64], samples: Sequence[RadialSample], size: int
+) -> npt.NDArray[np.float64]:
+    """Accumulate radial atomic weights, including repeated periodic images."""
+    result = np.zeros(size)
+    for radial, sample in zip(weights, samples, strict=True):
+        result += np.bincount(
+            sample.indices, weights=radial[sample.shells], minlength=size
+        )
+    return result
+
+
+def nearest_grid_points(values: np.ndarray) -> npt.NDArray[np.int64]:
+    """Round grid coordinates as Fortran NINT: half integers away from zero."""
+    return (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(np.int64)
+
+
+def integration_extent(steps: np.ndarray) -> npt.NDArray[np.int64]:
+    """Return Chargemol's radial integration parallelepiped in grid coordinates."""
+    lengths = np.linalg.norm(steps, axis=1)
+    cosines = steps @ steps.T / np.outer(lengths, lengths)
+    sines = np.sqrt(np.maximum(1.0 - cosines**2, 0.0))
+    np.fill_diagonal(sines, 1.0)
+    # Retain the extra voxel on each side for consistent grid quadrature.
+    extent: npt.NDArray[np.int64] = (
+        np.ceil(CUTOFF / (sines.min(axis=1) * lengths)).astype(np.int64) + 1
+    )
+    return extent
+
+
 def nuclear_stencils(grid: DensityGrid) -> tuple[np.ndarray, ...]:
     """Return the 5x5x5 near-nucleus domains used for occupancy correction."""
     offsets = np.array(list(product(range(-2, 3), repeat=3)))
     centers = (grid.positions - grid.origin) @ np.linalg.inv(grid.steps)
-    # Fortran NINT rounds half integers away from zero.
-    centers = (np.sign(centers) * np.floor(np.abs(centers) + 0.5)).astype(np.int64)
+    centers = nearest_grid_points(centers)
     shape = np.asarray(grid.density.shape)
     result = []
     for center in centers:

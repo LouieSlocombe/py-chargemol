@@ -11,7 +11,6 @@ from py_chargemol.density.core import (
     CoreResult,
     dominant_occupancy_correction,
     partition_core,
-    sum_radial_weights,
 )
 from py_chargemol.density.ddec3 import partition_ddec3
 from py_chargemol.density.diagnostics import (
@@ -26,6 +25,7 @@ from py_chargemol.density.grid import (
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
+    sum_radial_weights,
 )
 from py_chargemol.density.partition import PartitionResult, partition_ddec6
 from py_chargemol.density.references import core_reference_density, reference_densities

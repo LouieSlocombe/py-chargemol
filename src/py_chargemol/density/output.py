@@ -9,7 +9,7 @@ import numpy as np
 from py_chargemol._version import __version__
 from py_chargemol.ddec6 import DDEC6Analysis, FloatArray, StrPath
 from py_chargemol.density.analysis import DDECResult
-from py_chargemol.density.references import NSHELLS, SCALE
+from py_chargemol.density.grid import NSHELLS, SCALE
 from py_chargemol.elements import number_to_symbol
 from py_chargemol.qdr.output import _moment_lines, format_qdr_point_charges
 from py_chargemol.units import BOHR_PER_ANGSTROM

@@ -11,15 +11,22 @@ from zipfile import ZipFile
 import numpy as np
 import numpy.typing as npt
 
-from py_chargemol.units import BOHR_PER_ANGSTROM
+from py_chargemol.density.grid import NSHELLS, SCALE
+
+__all__ = [
+    "NSHELLS",
+    "SCALE",
+    "SHELL_VOLUMES",
+    "core_reference_density",
+    "reference_densities",
+    "reference_density",
+]
 
 type FloatArray = npt.NDArray[np.float64]
 
-NSHELLS = 100
 _MAX_ATOMIC_NUMBER = 109
 _DENSITY_FLOOR = 1e-16
 _ZERO = 1e-10
-SCALE = NSHELLS / (5 * BOHR_PER_ANGSTROM)
 SHELL_VOLUMES: FloatArray = (
     4 * np.pi * np.diff(np.arange(NSHELLS + 1, dtype=np.float64) ** 3) / (3 * SCALE**3)
 )

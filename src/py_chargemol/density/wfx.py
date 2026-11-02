@@ -15,7 +15,13 @@ from pathlib import Path
 import numpy as np
 
 from py_chargemol.ddec6 import StrPath
-from py_chargemol.density.grid import CUTOFF, NSHELLS, SCALE, DensityGrid
+from py_chargemol.density.grid import (
+    CUTOFF,
+    NSHELLS,
+    SCALE,
+    DensityGrid,
+    nearest_grid_points,
+)
 from py_chargemol.density.references import core_reference_density
 
 _GRID_SPACING = 0.14
@@ -319,7 +325,7 @@ class _Geometry:
         self, center: np.ndarray, radius: float, stride: int
     ) -> tuple[np.ndarray, np.ndarray]:
         center_grid = (center - self.origin) @ np.linalg.inv(self.steps)
-        nearest = _nint(center_grid)
+        nearest = nearest_grid_points(center_grid)
         extent = np.ceil(radius * self.extent / CUTOFF).astype(int) + 1
         lower, upper = nearest - extent, nearest + extent
         offset = stride - 2 if stride > 1 else 0
@@ -345,10 +351,6 @@ class _Geometry:
         extent *= np.array(self.periodic)
         images = np.array(list(product(*(range(-n, n + 1) for n in extent))))
         return np.asarray(images @ self.lattice)
-
-
-def _nint(values: np.ndarray) -> np.ndarray:
-    return (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(int)
 
 
 def _lengths_and_sines(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -391,7 +393,7 @@ def _geometry(
         steps[2] = direction * spacing / np.linalg.norm(direction)
     lengths, sines = _lengths_and_sines(steps)
     extent = np.ceil(CUTOFF / (sines * lengths)).astype(int) + 1
-    rounded = _nint(positions @ np.linalg.inv(steps))
+    rounded = nearest_grid_points(positions @ np.linalg.inv(steps))
     shape = (
         24 * np.ceil((rounded.max(axis=0) - rounded.min(axis=0) + 2 * extent + 11) / 24)
     ).astype(int)

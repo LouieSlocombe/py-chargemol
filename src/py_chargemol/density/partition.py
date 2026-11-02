@@ -6,13 +6,28 @@ averaging, buried-tail constraints, and nonnegative valence populations.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
 
-from py_chargemol.density.references import NSHELLS, SCALE, reference_densities
+from py_chargemol.density.grid import NSHELLS, SCALE
+from py_chargemol.density.grid import (
+    RadialSample as AtomicSample,
+)
+from py_chargemol.density.grid import (
+    sum_radial_weights as pseudodensity,
+)
+from py_chargemol.density.references import reference_densities
 from py_chargemol.density.reshaping import monotonic_decay, tail_decay
+
+__all__ = [
+    "AtomicSample",
+    "FloatArray",
+    "IntArray",
+    "PartitionResult",
+    "partition_ddec6",
+    "pseudodensity",
+]
 
 type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
@@ -22,20 +37,6 @@ _CHARGE_TOLERANCE = 1e-5
 _FIRST_ITERATION = 4
 _PARTITION_STEPS = 7
 _TAIL_CONSTRAINT_THRESHOLD = 0.01
-
-
-class AtomicSample(Protocol):
-    """Grid points and radial shells surrounding an atom and its periodic images."""
-
-    @property
-    def indices(self) -> IntArray:
-        """Flat indices into the density grid, including repeated periodic images."""
-        ...
-
-    @property
-    def shells(self) -> IntArray:
-        """Zero-based radial shell of each sampled point."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -51,18 +52,6 @@ class PartitionResult:
     hirshfeld_charges: FloatArray
     normalization: float
     iterations: int
-
-
-def pseudodensity(
-    weights: FloatArray, samples: Sequence[AtomicSample], size: int
-) -> FloatArray:
-    """Sum all radial atomic weights onto the flattened real-space grid."""
-    result = np.zeros(size)
-    for row, sample in zip(weights, samples, strict=True):
-        result += np.bincount(
-            sample.indices, weights=row[sample.shells], minlength=size
-        )
-    return result
 
 
 def _shell_statistics(

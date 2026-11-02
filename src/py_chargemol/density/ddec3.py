@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from py_chargemol.density.grid import NSHELLS, SCALE
 from py_chargemol.density.partition import (
     AtomicSample,
     FloatArray,
@@ -13,7 +14,7 @@ from py_chargemol.density.partition import (
     _shell_statistics,
     pseudodensity,
 )
-from py_chargemol.density.references import NSHELLS, SCALE, reference_densities
+from py_chargemol.density.references import reference_densities
 
 _ZERO = 1e-10
 _CHARGE_TOLERANCE = 1e-5

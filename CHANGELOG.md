@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Consolidate shared radial-grid sampling and core-density reconstruction while
+  preserving the numerical algorithms and existing import paths.
 - Add independent Python/NumPy DDEC6 and DDEC3 density partitioning, core-density
   reconstruction, multipoles, collinear/noncollinear spin moments, bond orders,
   overlap populations, Hirshfeld/CM5 charges, and direct density-to-QDR analysis.

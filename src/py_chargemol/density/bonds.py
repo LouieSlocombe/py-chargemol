@@ -15,27 +15,21 @@ from typing import Protocol
 import numpy as np
 
 from py_chargemol.ddec6 import FloatArray, IntArray, OverlapPairs
-from py_chargemol.units import BOHR_PER_ANGSTROM
+from py_chargemol.density.grid import (
+    CUTOFF,
+    NSHELLS,
+    SCALE,
+    ZERO,
+    RadialSample,
+    integration_extent,
+    nearest_grid_points,
+)
 
-_SHELLS = 100
-_RADIUS = 5.0 * BOHR_PER_ANGSTROM
-_SCALE = _SHELLS / _RADIUS
-_ZERO = 1e-10
 _CHARGE_TOLERANCE = 1e-5
 
 
-class AtomicSampleLike(Protocol):
+class AtomicSampleLike(RadialSample, Protocol):
     """An atom-centred grid, including periodic images of grid points."""
-
-    @property
-    def indices(self) -> IntArray:
-        """Indices into the flattened unit-cell grid."""
-        ...
-
-    @property
-    def shells(self) -> IntArray:
-        """Zero-based radial shell of each point."""
-        ...
 
     @property
     def displacements(self) -> FloatArray:
@@ -89,10 +83,6 @@ class _PairDomains:
     coordinates: tuple[IntArray, ...]
 
 
-def _nearest(values: FloatArray) -> IntArray:
-    return (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(np.int64)
-
-
 def _pair_domains(
     positions: FloatArray,
     lattice_vectors: FloatArray,
@@ -101,18 +91,14 @@ def _pair_domains(
     origin: FloatArray,
 ) -> _PairDomains:
     inverse = np.linalg.inv(steps)
-    lengths = np.linalg.norm(steps, axis=1)
-    cosines = steps @ steps.T / np.outer(lengths, lengths)
-    sines = np.sqrt(np.maximum(1.0 - cosines**2, 0.0))
-    np.fill_diagonal(sines, 1.0)
-    extent = np.ceil(_RADIUS / (sines.min(axis=1) * lengths)).astype(np.int64) + 1
+    extent = integration_extent(steps)
     centers = (positions - origin) @ inverse
     coordinates = tuple(
-        _nearest(sample.displacements @ inverse + centers[atom])
+        nearest_grid_points(sample.displacements @ inverse + centers[atom])
         for atom, sample in enumerate(samples)
     )
-    shape = _nearest(np.diag(lattice_vectors @ inverse))
-    return _PairDomains(_nearest(centers), extent, shape, coordinates)
+    shape = nearest_grid_points(np.diag(lattice_vectors @ inverse))
+    return _PairDomains(nearest_grid_points(centers), extent, shape, coordinates)
 
 
 def _shared_domain(  # noqa: PLR0913, PLR0917
@@ -126,14 +112,14 @@ def _shared_domain(  # noqa: PLR0913, PLR0917
     center_i = domain.centers[atom_i]
     center_j = domain.centers[atom_j] + shift * domain.shape
     middle = 0.5 * (center_i + center_j)
-    multiplier = np.sqrt(max(1.0 - np.sum(separation**2) / (4.0 * _RADIUS**2), 0.0))
+    multiplier = np.sqrt(max(1.0 - np.sum(separation**2) / (4.0 * CUTOFF**2), 0.0))
     lower = np.maximum(
         -domain.extent + np.maximum(center_i, center_j),
-        _nearest(-domain.extent * multiplier + middle) - 2,
+        nearest_grid_points(-domain.extent * multiplier + middle) - 2,
     )
     upper = np.minimum(
         domain.extent + np.minimum(center_i, center_j),
-        _nearest(domain.extent * multiplier + middle) + 2,
+        nearest_grid_points(domain.extent * multiplier + middle) + 2,
     )
     coordinates = domain.coordinates[atom_i]
     active = np.all((coordinates >= lower) & (coordinates <= upper), axis=1)
@@ -152,12 +138,12 @@ def _spherical_average(
     averages = np.zeros_like(weights)
     shell_populations = np.zeros_like(weights)
     for atom, sample in enumerate(samples):
-        active = pseudodensity[sample.indices] > _ZERO
+        active = pseudodensity[sample.indices] > ZERO
         points = sample.indices[active]
         shells = sample.shells[active]
         assigned = density[points] * weights[atom, shells] / pseudodensity[points]
-        sums = np.bincount(shells, weights=assigned, minlength=_SHELLS)
-        counts = np.bincount(shells, minlength=_SHELLS)
+        sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
+        counts = np.bincount(shells, minlength=NSHELLS)
         np.divide(sums, counts, out=averages[atom], where=counts > 0)
         shell_populations[atom] = sums * voxel_volume
     return averages, shell_populations
@@ -185,12 +171,12 @@ def _correct_density(  # noqa: PLR0913, PLR0917
         for atom, points in enumerate(near_nucleus_indices):
             local_density = corrected[points]
             maximum = float(np.max(local_density, initial=0))
-            if maximum <= _ZERO:
+            if maximum <= ZERO:
                 continue
             sum_cubes = float(np.sum(local_density**3))
             factor = residual[atom] / (sum_cubes * voxel_volume)
             factor = min(factor, 0.25 / maximum**2)
-            active = local_density > _ZERO
+            active = local_density > ZERO
             corrected[points[active]] = local_density[active] / np.sqrt(
                 1.0 - 2.0 * factor * local_density[active] ** 2
             )
@@ -243,15 +229,15 @@ def _overlap_estimate_grid(separation: int) -> tuple[IntArray, IntArray, FloatAr
     radial_i: list[int] = []
     radial_j: list[int] = []
     measures: list[float] = []
-    for x in range(separation - _SHELLS, _SHELLS + 1):
-        maximum = _SHELLS**2 - max(x**2, (separation - x) ** 2)
+    for x in range(separation - NSHELLS, NSHELLS + 1):
+        maximum = NSHELLS**2 - max(x**2, (separation - x) ** 2)
         for height in range(int(np.ceil(np.sqrt(maximum))) + 1):
             shell_i = int(np.floor(np.hypot(x, height) + 0.5))
             shell_j = int(np.floor(np.hypot(separation - x, height) + 0.5))
-            if shell_i < _SHELLS and shell_j < _SHELLS:
+            if shell_i < NSHELLS and shell_j < NSHELLS:
                 radial_i.append(shell_i)
                 radial_j.append(shell_j)
-                measures.append(4.0 * np.pi * height / _SCALE**3)
+                measures.append(4.0 * np.pi * height / SCALE**3)
     return (
         np.asarray(radial_i, dtype=np.int64),
         np.asarray(radial_j, dtype=np.int64),
@@ -268,16 +254,16 @@ def _significant_pair(  # noqa: PLR0913, PLR0917
     minimum_density: FloatArray,
     pair_cutoff: float,
 ) -> bool:
-    separation = int(np.ceil(_SCALE * distance + _ZERO))
+    separation = int(np.ceil(SCALE * distance + ZERO))
     upper_bound = 1.0
     for shell in range(1, separation):
         other = separation - shell
-        if shell <= _SHELLS and other <= _SHELLS:
+        if shell <= NSHELLS and other <= NSHELLS:
             upper_bound = min(
                 upper_bound,
                 2.0 * (outside[atom_i, shell - 1] + outside[atom_j, other - 1]),
             )
-    if upper_bound < pair_cutoff or separation > 2 * _SHELLS:
+    if upper_bound < pair_cutoff or separation > 2 * NSHELLS:
         return False
     shells_i, shells_j, measures = _overlap_estimate_grid(separation)
     density_i = averages[atom_i, shells_i]
@@ -288,7 +274,7 @@ def _significant_pair(  # noqa: PLR0913, PLR0917
         ),
         density_i + density_j,
     )
-    active = denominator > _ZERO
+    active = denominator > ZERO
     estimate = np.sum(
         measures[active] * density_i[active] * density_j[active] / denominator[active]
     )
@@ -304,7 +290,7 @@ def _candidate_pairs(
     if any(periodic):
         inverse = np.linalg.inv(lattice_vectors)
         limits = np.where(
-            periodic, np.ceil(2.0 * _RADIUS * np.linalg.norm(inverse, axis=0)) + 1, 0
+            periodic, np.ceil(2.0 * CUTOFF * np.linalg.norm(inverse, axis=0)) + 1, 0
         ).astype(np.int64)
     translations = list(itertools.product(*(range(-k, k + 1) for k in limits)))
     for atom_i in range(len(positions)):
@@ -316,7 +302,7 @@ def _candidate_pairs(
                 separation = (
                     positions[atom_j] + shift @ lattice_vectors - positions[atom_i]
                 )
-                if np.linalg.norm(separation) <= 2.0 * _RADIUS:
+                if np.linalg.norm(separation) <= 2.0 * CUTOFF:
                     yield atom_i, atom_j, shift, separation
 
 
@@ -333,14 +319,14 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
     voxel_volume: float,
 ) -> FloatArray:
     distance_j = np.linalg.norm(sample.displacements - separation, axis=1)
-    shells_j = (np.ceil(_SCALE * distance_j + _ZERO) - 1).astype(np.int64)
-    active = shells_j < _SHELLS
+    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.int64)
+    active = shells_j < NSHELLS
     points = sample.indices[active]
     shells_i = sample.shells[active]
     shells_j = shells_j[active]
     total = total_vectors[points]
     denominator = np.sum(total**2, axis=1)
-    active_density = (denominator > _ZERO**2) & (pseudodensity[points] > _ZERO)
+    active_density = (denominator > ZERO**2) & (pseudodensity[points] > ZERO)
     points = points[active_density]
     shells_i = shells_i[active_density]
     shells_j = shells_j[active_density]
@@ -376,7 +362,7 @@ def _summed_exchange(
     for atom, sample in enumerate(samples):
         total = total_vectors[sample.indices]
         denominator = np.sum(total**2, axis=1)
-        active = denominator > _ZERO**2
+        active = denominator > ZERO**2
         local = vectors[atom, sample.shells[active]]
         product = np.sum(local * (total[active] - local), axis=1)
         summed[atom] = (
@@ -398,7 +384,7 @@ def _final_bond_orders(
     squared = np.zeros(len(populations))
     np.add.at(squared, atom_i, contact**2)
     np.add.at(squared, atom_j, contact**2)
-    active = (squared[atom_i] > _ZERO) & (squared[atom_j] > _ZERO)
+    active = (squared[atom_i] > ZERO) & (squared[atom_j] > ZERO)
     coordination = np.zeros(len(contact))
     coordination[active] = (
         1.0
@@ -421,7 +407,7 @@ def _final_bond_orders(
         populations - 0.5 * summed_exchange,
         scaling_sum,
         out=scale,
-        where=scaling_sum > _ZERO,
+        where=scaling_sum > ZERO,
     )
     correction = expansion * np.minimum(1.0, np.minimum(scale[atom_i], scale[atom_j]))
     summed_bonds = summed_exchange.copy()
@@ -475,7 +461,7 @@ def compute_bond_orders(  # noqa: PLR0913
         msg = "pair_cutoff must be finite and nonnegative"
         raise ValueError(msg)
     natoms = len(samples)
-    if weights.shape != (natoms, _SHELLS) or populations.shape != (natoms,):
+    if weights.shape != (natoms, NSHELLS) or populations.shape != (natoms,):
         msg = "weights must have shape (n, 100) and populations shape (n,)"
         raise ValueError(msg)
     if near_nucleus_indices is not None and len(near_nucleus_indices) != natoms:

@@ -13,6 +13,7 @@ import numpy as np
 
 from py_chargemol.ddec6 import FloatArray, IntArray
 from py_chargemol.density.bonds import AtomicSampleLike
+from py_chargemol.density.grid import NSHELLS
 
 _ZERO = 1e-10
 _XI_THRESHOLD = 0.001
@@ -138,7 +139,7 @@ def _local_spin_data(
                 assigned_density,
                 proportional,
                 _theta(assigned_density, proportional),
-                np.bincount(shells, minlength=100),
+                np.bincount(shells, minlength=NSHELLS),
             )
         )
     return local

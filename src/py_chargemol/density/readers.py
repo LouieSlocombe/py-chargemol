@@ -47,6 +47,11 @@ def _provisional_total_density(grid: DensityGrid) -> FloatArray:
         return np.asarray(grid.density + grid.core_density, dtype=np.float64)
     if not np.any(grid.core_electrons):
         return grid.density
+    return np.asarray(grid.density + _reference_core_density(grid), dtype=np.float64)
+
+
+def _reference_core_density(grid: DensityGrid) -> FloatArray:
+    """Sample reference cores before their integrated populations are corrected."""
     radial = np.zeros((grid.natoms, NSHELLS))
     for atom, (number, count) in enumerate(
         zip(grid.atomic_numbers, np.asarray(grid.core_electrons), strict=True)
@@ -54,7 +59,7 @@ def _provisional_total_density(grid: DensityGrid) -> FloatArray:
         if count:
             radial[atom] = core_reference_density(int(number), int(count))
     core = sum_radial_weights(radial, atomic_samples(grid), grid.density.size)
-    return np.asarray(grid.density + core.reshape(grid.density.shape), dtype=np.float64)
+    return np.asarray(core.reshape(grid.density.shape), dtype=np.float64)
 
 
 @dataclass(slots=True)
@@ -336,17 +341,7 @@ def read_vasp(
 
 def _vasp_spin(raw: FloatArray, grid: DensityGrid, directory: Path) -> FloatArray:
     if grid.core_density is None:
-        radial = np.stack(
-            [
-                core_reference_density(int(number), int(count))
-                for number, count in zip(
-                    grid.atomic_numbers, np.asarray(grid.core_electrons), strict=True
-                )
-            ]
-        )
-        grid.core_density = sum_radial_weights(
-            radial, atomic_samples(grid), grid.density.size
-        ).reshape(grid.density.shape)
+        grid.core_density = _reference_core_density(grid)
     total = grid.density + grid.core_density
     pseudo = np.asarray(grid.pseudodensity)
     raw = (
