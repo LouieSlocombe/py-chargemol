@@ -105,7 +105,10 @@ def test_calculate_accepts_explicit_paths(
 
 
 @pytest.mark.parametrize("charges_name", ["DDEC6_net_atomic_charges.xyz", CHARGES_FILE])
-@pytest.mark.parametrize("overlaps_name", [OVERLAPS_FILE, "overlap_populations.txt"])
+@pytest.mark.parametrize(
+    "overlaps_name",
+    [OVERLAPS_FILE, "overlap_populations.txt", "overlap_populations.xyz"],
+)
 def test_calculate_discovers_current_and_legacy_file_names(
     copy_example: Copier,
     load_example: Loader,

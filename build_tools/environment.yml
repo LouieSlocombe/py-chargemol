@@ -3,7 +3,7 @@
 #
 #   conda env create -f build_tools/environment.yml
 #   conda activate py-chargemol
-#   python -m pip install -e .
+#   python -m pip install .
 #
 # Mirrors [project.dependencies] in pyproject.toml, which is the authoritative
 # dependency list. Update this file when those dependencies change.

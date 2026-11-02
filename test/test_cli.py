@@ -121,6 +121,21 @@ def test_qdr_reports_malformed_inputs(
     assert "the file is empty" in capsys.readouterr().err
 
 
+def test_qdr_rejects_nonfinite_periodic_data(
+    copy_example: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = copy_example("formamide_VASP")
+    overlaps = directory / "overlap_populations_and_contact_exchanges.txt"
+    overlaps.write_text(overlaps.read_text().replace("0.000294", "nan", 1))
+
+    assert main(["qdr", str(directory)]) == 1
+
+    error = capsys.readouterr().err
+    assert str(overlaps) in error
+    assert "nonfinite value" in error
+    assert not (directory / "QDR-DDEC6_point_charges.xyz").exists()
+
+
 def test_qdr_reports_an_unwritable_log(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

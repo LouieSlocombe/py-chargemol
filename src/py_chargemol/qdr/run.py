@@ -29,6 +29,7 @@ CHARGE_FILES: Final = (
 OVERLAP_FILES: Final = (
     "overlap_populations_and_contact_exchanges.txt",
     "overlap_populations.txt",
+    "overlap_populations.xyz",
 )
 """Chargemol overlap population files, in the order they are looked for."""
 

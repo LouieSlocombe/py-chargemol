@@ -1,6 +1,6 @@
 # Conda environment for developing py-chargemol: everything in environment.yml,
 # plus the build, quality, and test tools, with py-chargemol installed editable.
-# Create it with build_tools/conda_install.sh.
+# Create or update it with build_tools/conda_install.sh.
 #
 # Mirrors pyproject.toml, which is the authoritative dependency list and sets the
 # version floors. Update this file when those dependencies change.

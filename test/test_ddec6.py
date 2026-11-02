@@ -102,6 +102,21 @@ def test_a_zero_lattice_vector_is_a_nonperiodic_direction(
     np.testing.assert_allclose(analysis.lattice_vectors[2, 2], 5 * BOHR_PER_ANGSTROM)
 
 
+@pytest.mark.parametrize("invalid", ["1e999", "-1e999", "1D999"])
+def test_nonfinite_lattice_vectors_are_rejected(
+    tmp_path: Path, co_lines: list[str], invalid: str
+) -> None:
+    co_lines[1] = (
+        f"jmolscript: unitcell [{{ {invalid} 0 0 }}, {{ 0 1 0 }}, {{ 0 0 1 }}]"
+    )
+    path = write(tmp_path / "charges.xyz", co_lines)
+
+    with pytest.raises(ValueError, match=r"unit cell.*second line.*nonfinite") as error:
+        read_ddec6_net_atomic_charges(path)
+
+    assert str(path) in str(error.value)
+
+
 def test_an_overflowed_atom_count_is_taken_from_the_rows(
     tmp_path: Path, co_charges: Path, co_lines: list[str]
 ) -> None:
@@ -169,6 +184,33 @@ def test_unreadable_numbers_are_rejected(tmp_path: Path, co_lines: list[str]) ->
 
     with pytest.raises(ValueError, match="could not read columns 2-5"):
         read_ddec6_net_atomic_charges(write(tmp_path / "c.xyz", co_lines))
+
+
+@pytest.mark.parametrize(
+    ("width", "column"),
+    [(5, 1), (5, 4), (18, 6), (18, 10), (8, 5), (8, 6)],
+    ids=["position", "charge", "dipole", "quadrupole", "cloud_a", "cloud_b"],
+)
+@pytest.mark.parametrize("invalid", ["nan", "inf", "-inf", "1e999"])
+def test_nonfinite_atomic_data_are_rejected(
+    tmp_path: Path, co_lines: list[str], width: int, column: int, invalid: str
+) -> None:
+    row = next(
+        i
+        for i, line in enumerate(co_lines)
+        if len(line.split()) == width and "C" in line.split()[:2]
+    )
+    fields = co_lines[row].split()
+    fields[column] = invalid
+    co_lines[row] = " ".join(fields)
+    path = write(tmp_path / "charges.xyz", co_lines)
+
+    with pytest.raises(
+        ValueError, match=f"nonfinite value in table row 1, column {column + 1}"
+    ) as error:
+        read_ddec6_net_atomic_charges(path)
+
+    assert str(path) in str(error.value)
 
 
 def test_misaligned_tables_are_rejected(tmp_path: Path, co_lines: list[str]) -> None:
@@ -268,6 +310,23 @@ def test_reads_an_empty_pair_list(tmp_path: Path) -> None:
 
     assert len(pairs) == 0
     assert pairs.translations.shape == (0, 3)
+
+
+@pytest.mark.parametrize("invalid", ["nan", "inf", "-inf", "1e999"])
+def test_nonfinite_overlap_populations_are_rejected(
+    tmp_path: Path, invalid: str
+) -> None:
+    path = write(
+        tmp_path / "overlaps.txt",
+        ["2", "Nonperiodic system", "header", "1 2 0 0 0 0.5", f"2 1 0 0 0 {invalid}"],
+    )
+
+    with pytest.raises(
+        ValueError, match="nonfinite value in table row 2, column 6"
+    ) as error:
+        read_overlap_populations(path)
+
+    assert str(path) in str(error.value)
 
 
 @pytest.mark.parametrize(

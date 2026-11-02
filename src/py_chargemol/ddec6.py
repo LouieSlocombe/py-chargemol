@@ -5,7 +5,8 @@ Two files are read:
 - ``DDEC6_net_atomic_charges.xyz`` (or ``DDEC6_even_tempered_net_atomic_charges.xyz``),
   with the net atomic charges, atomic dipoles and quadrupoles, and electron cloud
   penetration parameters.
-- ``overlap_populations_and_contact_exchanges.txt`` (or ``overlap_populations.txt``),
+- ``overlap_populations_and_contact_exchanges.txt``, ``overlap_populations.txt``,
+  or the September 2017 ``overlap_populations.xyz``,
   with the bond overlap populations between pairs of atoms.
 
 The layout handling follows the QDR program's Fortran list-directed reads, which skip
@@ -193,8 +194,8 @@ def read_overlap_populations(path: StrPath) -> OverlapPairs:
     """Read a Chargemol ``overlap_populations_and_contact_exchanges.txt`` file.
 
     Args:
-        path: The file to read. The older ``overlap_populations.txt`` has the same
-            leading columns and can be read too.
+        path: The file to read. ``overlap_populations.txt`` and the September
+            2017 ``overlap_populations.xyz`` have the same leading columns.
 
     Returns:
         The directed atom pairs, with zero-based atom indices.
@@ -283,6 +284,9 @@ def _parse_lattice(line: str, path: StrPath) -> FloatArray:
         )
         raise ValueError(msg)
     values = [float(n.replace("D", "E").replace("d", "e")) for n in numbers]
+    if not np.all(np.isfinite(values)):
+        msg = f"{path}: the unit cell on the second line contains a nonfinite value"
+        raise ValueError(msg)
     return np.array(values).reshape(3, 3)
 
 
@@ -301,11 +305,20 @@ def _table[T: np.generic](
 ) -> npt.NDArray[T]:
     """Parse whitespace-separated columns from rows, one row per table row."""
     try:
-        return np.loadtxt(rows, dtype=dtype, usecols=columns, ndmin=2)
+        values = np.loadtxt(rows, dtype=dtype, usecols=columns, ndmin=2)
     except ValueError as error:
         first, last = columns.start + 1, columns.stop
         msg = f"{path}: could not read columns {first}-{last}: {error}"
         raise ValueError(msg) from None
+    invalid = ~np.isfinite(values)
+    if np.any(invalid):
+        row, column = np.argwhere(invalid)[0]
+        msg = (
+            f"{path}: nonfinite value in table row {row + 1}, "
+            f"column {columns[column] + 1}"
+        )
+        raise ValueError(msg)
+    return values
 
 
 def _find_title(
