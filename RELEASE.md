@@ -48,10 +48,10 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
    ```
 
    Both smoke tests must print the proposed release version and complete a
-   density-to-QDR calculation using bundled reference-ion and core data. The
-   wheel includes `py.typed`, the density archives, and both licenses; the sdist
-   also includes the lockfile and
-   the tests with their unmodified worked-example fixtures under `test/`.
+   molecular density-to-QDR calculation, including bond orders, using bundled
+   reference-ion and core data. The wheel includes `py.typed`, the density
+   archives, and both licenses; the sdist also includes the lockfile and the
+   tests with their unmodified worked-example fixtures under `test/`.
 3. Review and commit the release changes, push them for review, and require the
    **All checks passed** CI result on the exact commit being released. CI covers
    Linux, macOS, and Windows, Python 3.14 and 3.15, free-threaded 3.14, and the

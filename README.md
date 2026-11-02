@@ -8,7 +8,8 @@ and T. A. Manz's April 9, 2025 QDR program.
 
 **No Chargemol executable, Fortran compiler, external atomic-density directory,
 or network access is needed.** The reference atomic densities are bundled in
-the Python package. Existing Chargemol result files and in-memory DDEC6 arrays
+the Python package for elements 1–109, including neutral ions, charged ions,
+and core electrons. Existing Chargemol result files and in-memory DDEC6 arrays
 remain supported.
 
 QDR charges are meant for atom-centred point-charge models in classical force
@@ -39,14 +40,7 @@ python -m pip install py-chargemol
 
 See [Development](#development) for an editable install and developer tools, and the
 [changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
-for release notes.
-
-### Do I need Chargemol installed too?
-
-**No.** py-chargemol now performs the density partitioning and QDR calculation
-itself. It bundles the neutral-ion, charged-ion, and core-electron reference
-tables needed for elements 1–109. The original distribution is used only as
-a development reference; installed packages never look for it.
+for release notes. Conda and uv are optional development tools.
 
 You still need an electron density or wavefunction from an electronic-structure
 calculation. Atomic coordinates alone do not determine a DDEC analysis:
@@ -55,10 +49,15 @@ calculation. Atomic coordinates alone do not determine a DDEC analysis:
 Electron-density calculation → py-chargemol DDEC6 analysis → QDR charges
 ```
 
-Conda and uv are optional environment and development tools. NumPy is the only
-third-party runtime dependency installed by pip.
-
 ## Usage
+
+Choose an entry point for the data you already have:
+
+| Starting point | Python API | Command line |
+| --- | --- | --- |
+| Electron density or wavefunction | [`read_density` → `compute_ddec6`](#compute-directly-from-an-electron-density) | `py-chargemol analyze` |
+| Existing Chargemol output files | [`calculate_qdr`](#python) | `py-chargemol qdr` |
+| DDEC6 arrays in memory | [`compute_qdr_from_arrays`](#compute-directly-from-arrays) | — |
 
 ### Compute directly from an electron density
 
@@ -321,8 +320,6 @@ still require a sufficiently resolved input density. Periodic, effective-core,
 and ghost-centre WFX paths have analytic and conservation tests, but were not
 compared against supplied full reference calculations for those cases.
 
-For the QDR port, the following implementation details differ:
-
 The QDR regression tests compare every worked example with the Fortran program,
 allowing one unit in the last printed digit for rounding and checking tiny
 solver residuals against an absolute tolerance of `1e-10`. Some implementation
@@ -371,13 +368,11 @@ includes these resources.
 
 ## Citation
 
-Publications that use these charges must cite the method, as the license
-requires:
-
-DDEC, bond-order, and spin calculations must also cite the corresponding
-methods listed in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL), including the DDEC6
-papers by T. A. Manz and N. Gabaldon Limas and the Chargemol 3.5 program.
-For QDR charges, cite:
+Publications using these analyses must cite the original methods, as the
+licenses require. For DDEC, bond-order, and spin calculations, cite the methods
+listed in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL), including the DDEC6 papers by
+T. A. Manz and N. Gabaldon Limas and the Chargemol 3.5 program. For QDR charges,
+cite:
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across

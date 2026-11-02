@@ -9,6 +9,8 @@
   without overflow or casting errors.
 - Reject duplicate XSF density grids, malformed supported job-control tags,
   and invalid atomic numbers before looking up default core counts.
+- Exercise molecular bond orders and QDR resorption in installed-package smoke
+  tests, and streamline the usage documentation.
 - Add independent Python/NumPy DDEC6 and DDEC3 density partitioning, core-density
   reconstruction, multipoles, collinear/noncollinear spin moments, bond orders,
   overlap populations, Hirshfeld/CM5 charges, and direct density-to-QDR analysis.
