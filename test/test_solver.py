@@ -139,6 +139,134 @@ def test_inputs_are_not_modified(load_example: Loader) -> None:
     np.testing.assert_array_equal(analysis.atomic_dipoles, before[1])
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "positions",
+        "net_charges",
+        "atomic_dipoles",
+        "atomic_quadrupoles",
+        "lattice_vectors",
+    ],
+)
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_direct_analysis_rejects_nonfinite_arrays(
+    load_example: Loader, field: str, invalid: float
+) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+    values = getattr(analysis, field).copy()
+    values.flat[0] = invalid
+
+    with pytest.raises(ValueError, match=f"{field} must contain only finite real"):
+        compute_qdr_charges(dataclasses.replace(analysis, **{field: values}), pairs)
+
+
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [
+        ("positions", np.zeros((1, 3))),
+        ("net_charges", np.zeros(1)),
+        ("atomic_dipoles", np.zeros((6, 1))),
+        ("atomic_quadrupoles", np.zeros((6, 5))),
+        ("lattice_vectors", np.zeros((1, 3))),
+        ("atom1", np.array(0)),
+        ("atom2", np.array([0])),
+        ("translations", np.zeros((1, 3), dtype=np.int64)),
+        ("populations", np.zeros(1)),
+    ],
+)
+def test_direct_inputs_reject_shapes_that_could_broadcast(
+    load_example: Loader, field: str, values: np.ndarray
+) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+    if hasattr(analysis, field):
+        analysis = dataclasses.replace(analysis, **{field: values})
+    else:
+        pairs = dataclasses.replace(pairs, **{field: values})
+
+    with pytest.raises(ValueError, match=f"{field} must have shape"):
+        compute_qdr_charges(analysis, pairs)
+
+
+@pytest.mark.parametrize("field", ["atom1", "atom2", "translations"])
+def test_direct_pairs_require_integer_indices(load_example: Loader, field: str) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+    values = getattr(pairs, field).astype(float) + 0.5
+
+    with pytest.raises(ValueError, match=f"{field} must contain integers"):
+        compute_qdr_charges(analysis, dataclasses.replace(pairs, **{field: values}))
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, 1j, "invalid"])
+def test_direct_pairs_reject_invalid_populations(
+    load_example: Loader, invalid: complex | str
+) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+    values = np.full(len(pairs), invalid)
+
+    with pytest.raises(ValueError, match="populations must contain only finite real"):
+        compute_qdr_charges(analysis, dataclasses.replace(pairs, populations=values))
+
+
+def test_direct_integer_multipoles_compute_in_floating_point(
+    load_example: Loader,
+) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+    analysis = dataclasses.replace(
+        analysis,
+        net_charges=np.zeros(analysis.natoms, dtype=np.int64),
+        atomic_dipoles=np.ones((analysis.natoms, 3), dtype=np.int64),
+        atomic_quadrupoles=np.zeros((analysis.natoms, 6), dtype=np.int64),
+    )
+    expected = dense_reference(
+        dataclasses.replace(
+            analysis,
+            net_charges=analysis.net_charges.astype(float),
+            atomic_dipoles=analysis.atomic_dipoles.astype(float),
+            atomic_quadrupoles=analysis.atomic_quadrupoles.astype(float),
+        ),
+        pairs,
+    )
+
+    result = compute_qdr_charges(analysis, pairs)
+
+    np.testing.assert_allclose(result.charges, expected.charges, atol=1e-10)
+    np.testing.assert_allclose(
+        result.atomic_dipoles, expected.atomic_dipoles, atol=1e-10
+    )
+    np.testing.assert_allclose(
+        result.atomic_quadrupoles, expected.atomic_quadrupoles, atol=1e-10
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "distance"), [(np.int16, 200), (np.int64, 4 * 10**9)]
+)
+def test_direct_integer_geometry_does_not_overflow(
+    load_example: Loader, dtype: npt.DTypeLike, distance: int
+) -> None:
+    analysis, pairs = load_example("CO_molecule")
+    analysis = dataclasses.replace(
+        analysis,
+        positions=np.array([[0, 0, 0], [distance, 0, 0]], dtype=dtype),
+        lattice_vectors=np.zeros((3, 3), dtype=dtype),
+    )
+    pairs = dataclasses.replace(pairs, translations=pairs.translations.astype(dtype))
+    expected = dense_reference(
+        dataclasses.replace(analysis, positions=analysis.positions.astype(float)), pairs
+    )
+
+    result = compute_qdr_charges(analysis, pairs)
+
+    np.testing.assert_allclose(result.charges, expected.charges, atol=1e-12)
+    np.testing.assert_allclose(
+        result.atomic_dipoles, expected.atomic_dipoles, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        result.atomic_quadrupoles, expected.atomic_quadrupoles, atol=1e-12
+    )
+
+
 def test_no_pairs_leaves_the_ddec6_multipoles(load_example: Loader) -> None:
     analysis, pairs = load_example("formamide_VASP")
     empty = OverlapPairs(

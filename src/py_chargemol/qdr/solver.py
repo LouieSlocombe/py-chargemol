@@ -97,8 +97,9 @@ def compute_qdr_charges(
         and total moments for nonperiodic systems.
 
     Raises:
-        ValueError: If atomic numbers or solver settings are invalid, a pair
-            names an atom outside the analysis, or a bond has zero length.
+        ValueError: If input arrays have inconsistent shapes or invalid values,
+            solver settings are invalid, a pair names an atom outside the
+            analysis, or a bond has zero length.
     """
     if (
         analysis.atomic_numbers.ndim != 1
@@ -114,6 +115,7 @@ def compute_qdr_charges(
             f"in 1-{len(ATOMIC_WEIGHTS)}"
         )
         raise ValueError(msg)
+    _validate_arrays(analysis, pairs)
     _validate_iteration_limit(max_cg_iterations)
     if not np.isfinite(tolerance) or tolerance < 0:
         msg = "tolerance must be finite and nonnegative"
@@ -121,9 +123,9 @@ def compute_qdr_charges(
 
     resorption = _Resorption(
         bonds=_Bonds.from_pairs(analysis, pairs),
-        charges=analysis.net_charges.copy(),
-        dipoles=analysis.atomic_dipoles.copy(),
-        quadrupoles=analysis.atomic_quadrupoles.copy(),
+        charges=np.array(analysis.net_charges, dtype=np.float64, copy=True),
+        dipoles=np.array(analysis.atomic_dipoles, dtype=np.float64, copy=True),
+        quadrupoles=np.array(analysis.atomic_quadrupoles, dtype=np.float64, copy=True),
         max_iterations=max_cg_iterations,
         tolerance=tolerance,
     )
@@ -150,6 +152,33 @@ def compute_qdr_charges(
         residual_norm=resorption.residual_norm,
         moments=moments,
     )
+
+
+def _validate_arrays(analysis: DDEC6Analysis, pairs: OverlapPairs) -> None:
+    """Validate direct dataclass inputs before NumPy can broadcast or propagate NaNs."""
+    natoms, npairs = analysis.natoms, pairs.atom1.size
+    arrays = (
+        ("positions", analysis.positions, (natoms, 3)),
+        ("net_charges", analysis.net_charges, (natoms,)),
+        ("atomic_dipoles", analysis.atomic_dipoles, (natoms, 3)),
+        ("atomic_quadrupoles", analysis.atomic_quadrupoles, (natoms, 6)),
+        ("lattice_vectors", analysis.lattice_vectors, (3, 3)),
+        ("atom1", pairs.atom1, (npairs,)),
+        ("atom2", pairs.atom2, (npairs,)),
+        ("translations", pairs.translations, (npairs, 3)),
+        ("populations", pairs.populations, (npairs,)),
+    )
+    for name, values, shape in arrays:
+        if values.shape != shape:
+            msg = f"{name} must have shape {shape}, got {values.shape}"
+            raise ValueError(msg)
+        if values.dtype.kind not in "fiu" or not np.all(np.isfinite(values)):
+            msg = f"{name} must contain only finite real numbers"
+            raise ValueError(msg)
+    for name in ("atom1", "atom2", "translations"):
+        if getattr(pairs, name).dtype.kind not in "iu":
+            msg = f"{name} must contain integers"
+            raise ValueError(msg)
 
 
 def _validate_iteration_limit(value: object) -> None:
@@ -183,10 +212,10 @@ class _Bonds:
 
         order = np.argsort(pairs.atom1, kind="stable")
         owner, partner = pairs.atom1[order], pairs.atom2[order]
+        positions = np.asarray(analysis.positions, dtype=np.float64)
+        lattice = np.asarray(analysis.lattice_vectors, dtype=np.float64)
         vectors = (
-            analysis.positions[partner]
-            - analysis.positions[owner]
-            + pairs.translations[order] @ analysis.lattice_vectors
+            positions[partner] - positions[owner] + pairs.translations[order] @ lattice
         )
         length = np.sqrt(np.einsum("ij,ij->i", vectors, vectors))
         if np.any(length == 0.0):

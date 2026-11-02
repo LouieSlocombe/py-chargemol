@@ -4,6 +4,9 @@
 
 - Consolidate shared radial-grid sampling and core-density reconstruction while
   preserving the numerical algorithms and existing import paths.
+- Validate direct QDR analysis arrays before computation, including shape,
+  finite-value, and integer-index checks; handle integer geometry and multipoles
+  without overflow or casting errors.
 - Reject duplicate XSF density grids, malformed supported job-control tags,
   and invalid atomic numbers before looking up default core counts.
 - Add independent Python/NumPy DDEC6 and DDEC3 density partitioning, core-density
