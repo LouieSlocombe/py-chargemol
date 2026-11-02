@@ -74,6 +74,19 @@ def test_job_control_output_switches(tmp_path: Path, text: str, expected: bool) 
     assert control.compute_bos is expected
 
 
+def test_job_control_ignores_unknown_tags_and_normalizes_supported_tags(
+    tmp_path: Path,
+) -> None:
+    control = read_job_control(
+        write(
+            tmp_path / "job_control.txt",
+            "<unused>first</unused><unused>second</unused>\n"
+            "< Net  Charge >1</NET CHARGE>\n",
+        )
+    )
+    assert control.net_charge == 1
+
+
 def test_partial_core_counts_preserve_original_element_defaults(tmp_path: Path) -> None:
     write(tmp_path / "valence_density.cube", cube())
     write(
@@ -81,6 +94,22 @@ def test_partial_core_counts_preserve_original_element_defaults(tmp_path: Path) 
         "<number of core electrons>1 0</number of core electrons>",
     )
     np.testing.assert_array_equal(read_density(tmp_path).core_electrons, [2, 0])
+
+
+@pytest.mark.parametrize("atomic_number", [0, 110])
+def test_core_mapping_rejects_invalid_atomic_numbers(
+    tmp_path: Path, atomic_number: int
+) -> None:
+    write(
+        tmp_path / "valence_density.cube",
+        cube().replace("8 0 0.25", f"{atomic_number} 0 0.25"),
+    )
+    write(
+        tmp_path / "job_control.txt",
+        "<number of core electrons>1 0</number of core electrons>",
+    )
+    with pytest.raises(ValueError, match="atomic numbers must lie in 1-109"):
+        read_density(tmp_path)
 
 
 def test_total_only_cube_ignores_job_core_counts_and_rejects_explicit_nonzero(
@@ -282,6 +311,10 @@ def test_xsf_spin_is_bounded_by_electron_density(
         ("<net charge>1 2</net charge>", "finite number"),
         ("<net charge>1", "closing tag"),
         ("<net charge>1</net charge><net charge>2</net charge>", "duplicate"),
+        ("<net charge>1</net charge><net charge>2", "duplicate"),
+        ("<net charge>1<charge type>ddec6</charge type>", "closing tag"),
+        ("<net charge>1</charge type>", "unexpected closing tag"),
+        ("</net charge>", "unexpected closing tag"),
         (
             (
                 "<periodicity along A, B, and C vectors>true false"

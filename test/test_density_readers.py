@@ -400,6 +400,16 @@ def test_xsf_rejects_ambiguous_grids_and_units(tmp_path: Path) -> None:
         )
 
 
+def test_xsf_rejects_duplicate_grid_labels(tmp_path: Path) -> None:
+    text = (
+        xsf_text(value=0.1)
+        + "BEGIN_DATAGRID_3D_"
+        + xsf_text(value=0.2).split("BEGIN_DATAGRID_3D_", 1)[1]
+    )
+    with pytest.raises(ValueError, match="duplicate XSF density grid"):
+        read_xsf(write(tmp_path / "duplicate.xsf", text), core_electrons=[2])
+
+
 def test_cube_optional_dataset_count_one(tmp_path: Path) -> None:
     text = cube_text().replace("1 0 0 0", "1 0 0 0 1", 1)
     grid = read_cube(write(tmp_path / "one.cube", text))

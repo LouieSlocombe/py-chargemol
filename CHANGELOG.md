@@ -4,6 +4,8 @@
 
 - Consolidate shared radial-grid sampling and core-density reconstruction while
   preserving the numerical algorithms and existing import paths.
+- Reject duplicate XSF density grids, malformed supported job-control tags,
+  and invalid atomic numbers before looking up default core counts.
 - Add independent Python/NumPy DDEC6 and DDEC3 density partitioning, core-density
   reconstruction, multipoles, collinear/noncollinear spin moments, bond orders,
   overlap populations, Hirshfeld/CM5 charges, and direct density-to-QDR analysis.

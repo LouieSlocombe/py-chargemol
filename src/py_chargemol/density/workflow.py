@@ -47,6 +47,16 @@ _BOOLEANS = {
     "f": False,
 }
 _DEFAULT_CORE_COUNTS = np.repeat([0, 2, 10, 18, 36, 54, 86], [2, 8, 8, 18, 18, 32, 23])
+_SUPPORTED_TAGS = {
+    _PERIODICITY_TAG,
+    "net charge",
+    "input filename",
+    "number of core electrons",
+    "charge type",
+    "density format",
+    "print atomic densities",
+    "compute bos",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +78,36 @@ class JobControl:
     compute_bos: bool | None = None
 
 
-def read_job_control(path: StrPath) -> JobControl:  # noqa: PLR0912, PLR0915
+def _control_tags(path: Path) -> dict[str, str]:
+    """Read supported tags once, rejecting unmatched or repeated delimiters."""
+    tags: dict[str, str] = {}
+    opening: tuple[str, int] | None = None
+    text = path.read_text(encoding="utf-8")
+    for match in re.finditer(r"<(/?)([^/<>]+)>", text):
+        key = " ".join(match[2].lower().split())
+        if key not in _SUPPORTED_TAGS:
+            continue
+        if not match[1]:
+            if opening is not None:
+                msg = f"{path}: missing closing tag for <{opening[0]}>"
+                raise ValueError(msg)
+            if key in tags:
+                msg = f"{path}: duplicate <{key}> tag"
+                raise ValueError(msg)
+            opening = key, match.end()
+        elif opening is None or key != opening[0]:
+            msg = f"{path}: unexpected closing tag </{key}>"
+            raise ValueError(msg)
+        else:
+            tags[key] = text[opening[1] : match.start()].strip()
+            opening = None
+    if opening is not None:
+        msg = f"{path}: missing closing tag for <{opening[0]}>"
+        raise ValueError(msg)
+    return tags
+
+
+def read_job_control(path: StrPath) -> JobControl:
     """Read optional physical metadata from a Chargemol job-control file.
 
     Unknown tags, including original executable and reference-density paths,
@@ -76,31 +115,7 @@ def read_job_control(path: StrPath) -> JobControl:  # noqa: PLR0912, PLR0915
     Core-electron rows contain atomic number followed by core-electron count.
     """
     path = Path(path)
-    text = path.read_text(encoding="utf-8")
-    tags: dict[str, str] = {}
-    for match in re.finditer(
-        r"<([^/<>]+)>(.*?)</\1>", text, flags=re.DOTALL | re.IGNORECASE
-    ):
-        key = " ".join(match[1].lower().split())
-        if key in tags:
-            msg = f"{path}: duplicate <{key}> tag"
-            raise ValueError(msg)
-        tags[key] = match[2].strip()
-    supported = {
-        _PERIODICITY_TAG,
-        "net charge",
-        "input filename",
-        "number of core electrons",
-        "charge type",
-        "density format",
-        "print atomic densities",
-        "compute bos",
-    }
-    for opening in re.finditer(r"<([^/<>]+)>", text):
-        key = " ".join(opening[1].lower().split())
-        if key in supported and key not in tags:
-            msg = f"{path}: missing closing tag for <{key}>"
-            raise ValueError(msg)
+    tags = _control_tags(path)
     periodic = None
     if _PERIODICITY_TAG in tags:
         values = _tokens(tags[_PERIODICITY_TAG])
@@ -315,6 +330,9 @@ def _cores(
         numbers = _vasp_numbers(path)
     else:
         return None
+    if np.any((numbers < 1) | (numbers > _MAX_ATOMIC_NUMBER)):
+        msg = f"{path}: atomic numbers must lie in 1-109"
+        raise ValueError(msg)
     return np.asarray(
         [
             control.core_electrons.get(

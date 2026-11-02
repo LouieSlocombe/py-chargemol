@@ -597,6 +597,9 @@ def _xsf_grids(
                 coordinates.append(_floats(fields[1:4], text.path))
         elif line.startswith("begin_datagrid_3d"):
             name = line.removeprefix("begin_datagrid_3d").lstrip("_")
+            if name in grids:
+                msg = f"{path}: duplicate XSF density grid {name!r}"
+                raise ValueError(msg)
             shape = _dimensions(text.line().split(), text.path)
             if min(shape) <= 1:
                 msg = f"{path}: XSF grids need at least two points on each axis"
