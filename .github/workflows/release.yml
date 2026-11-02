@@ -54,10 +54,10 @@ jobs:
         run: uvx --from twine twine check --strict dist/*
 
       - name: Smoke test the wheel
-        run: uv run --isolated --no-project --with dist/*.whl py-chargemol --version
+        run: uv run --isolated --no-project --with dist/*.whl python build_tools/smoke_install.py
 
       - name: Smoke test the sdist
-        run: uv run --isolated --no-project --with dist/*.tar.gz python -m py_chargemol --version
+        run: uv run --isolated --no-project --with dist/*.tar.gz python build_tools/smoke_install.py
 
       - name: Upload the distributions
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

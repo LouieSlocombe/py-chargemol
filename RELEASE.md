@@ -7,8 +7,9 @@ upload; a draft release does not.
 ## First-release setup
 
 Before publishing, confirm the distribution complies with the original QDR
-terms in [LICENSE](LICENSE), including its derived-work and source-distribution
-conditions.
+terms in [LICENSE](LICENSE) and the Chargemol terms in
+[LICENSE-CHARGEMOL](LICENSE-CHARGEMOL), including their derived-work and
+source-distribution conditions.
 
 Create the GitHub repository environment `pypi` and configure its deployment
 rules for release tags. Configure a PyPI trusted publisher with these exact
@@ -42,12 +43,14 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
    uv run --locked pytest --cov
    uv build --no-sources --clear
    uvx --from twine twine check --strict dist/*
-   uv run --isolated --no-project --with dist/*.whl py-chargemol --version
-   uv run --isolated --no-project --with dist/*.tar.gz python -m py_chargemol --version
+   uv run --isolated --no-project --with dist/*.whl python build_tools/smoke_install.py
+   uv run --isolated --no-project --with dist/*.tar.gz python build_tools/smoke_install.py
    ```
 
-   Both version commands must print the proposed release version. The wheel
-   includes `py.typed` and `LICENSE`; the sdist also includes the lockfile and
+   Both smoke tests must print the proposed release version and complete a
+   density-to-QDR calculation using bundled reference-ion and core data. The
+   wheel includes `py.typed`, the density archives, and both licenses; the sdist
+   also includes the lockfile and
    the tests with their unmodified worked-example fixtures under `test/`.
 3. Review and commit the release changes, push them for review, and require the
    **All checks passed** CI result on the exact commit being released. CI covers

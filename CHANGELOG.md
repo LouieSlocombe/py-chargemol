@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add independent Python/NumPy DDEC6 and DDEC3 density partitioning, core-density
+  reconstruction, multipoles, collinear/noncollinear spin moments, bond orders,
+  overlap populations, Hirshfeld/CM5 charges, and direct density-to-QDR analysis.
+- Bundle reference-ion and core-density data with original attribution and
+  provenance hashes; no Chargemol installation or external data path is needed.
+- Read cube, VASP, XSF, and WFX inputs and add `py-chargemol analyze` with Python
+  APIs for file and array workflows.
+- Accept the September 2017 `overlap_populations.xyz` filename directly.
+- Clarify runtime requirements, installation from a checkout, and density inputs
+  required for the standalone calculation.
+- Update existing conda environments in place instead of deleting them when
+  running the development installer.
+- Reject nonfinite values in Chargemol input files before computing QDR charges.
 - Remove the bundled QDR program and keep tests and their required reference
   fixtures under `test/` (#11).
 - Add `calculate_qdr` to read existing Chargemol output and return QDR charges,
@@ -22,8 +35,7 @@ First release of the Python port of T. A. Manz's April 9, 2025 QDR program.
   `py-chargemol qdr` command or the typed Python API.
 - Read Chargemol net atomic charges and overlap populations, including the
   September 2017 atomic-charge layout and atom/pair counts that overflow their
-  fixed-width fields. QDR still requires the overlap-population input described
-  in the README; the September 2017 Chargemol release does not produce it.
+  fixed-width fields.
 - Write QDR charge files, residual atomic multipoles, electron-cloud parameters,
   and total molecular multipole moments. The command also writes a computation
   log.

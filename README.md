@@ -1,10 +1,15 @@
 # py-chargemol
 
-py-chargemol computes quadrupole-dipole resorbed (QDR) point charges from a
-[Chargemol](https://ddec.sourceforge.net) DDEC6 analysis. It is a typed,
-NumPy-based Python port of T. A. Manz's QDR program (version April 9, 2025) and
-reproduces that program's results. Use it directly with Python arrays or existing
-Chargemol files; writing the reference program's output files is optional.
+py-chargemol computes DDEC6 and DDEC3 atomic charges, atomic multipoles, spin
+moments, bond orders, Hirshfeld and CM5 charges, and quadrupole-dipole resorbed
+(QDR) point charges directly from electron densities. The numerical algorithms
+are implemented in Python and NumPy, based on Chargemol 3.5 (September 26, 2017)
+and T. A. Manz's April 9, 2025 QDR program.
+
+**No Chargemol executable, Fortran compiler, external atomic-density directory,
+or network access is needed.** The reference atomic densities are bundled in
+the Python package. Existing Chargemol result files and in-memory DDEC6 arrays
+remain supported.
 
 QDR charges are meant for atom-centred point-charge models in classical force
 fields. They fold part of each atom's DDEC6 quadrupole and dipole into the point
@@ -15,19 +20,134 @@ atoms, use the DDEC6 net atomic charges, which are not resorbed.
 
 ## Installation
 
-Python 3.14 or newer is required. NumPy is the only runtime dependency.
+Python 3.14 or newer is required. NumPy 2.3.3 or newer is the only runtime
+dependency and is installed automatically by pip.
 
-Install the published package with pip:
+To use this checkout, run this from the repository root in your Python
+environment:
+
+```bash
+python -m pip install .
+py-chargemol --version
+```
+
+For a published release, install by package name:
 
 ```bash
 python -m pip install py-chargemol
 ```
 
-See [Development](#development) to install from a source checkout, and the
+See [Development](#development) for an editable install and developer tools, and the
 [changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
 for release notes.
 
+### Do I need Chargemol installed too?
+
+**No.** py-chargemol now performs the density partitioning and QDR calculation
+itself. It bundles the neutral-ion, charged-ion, and core-electron reference
+tables needed for elements 1–109. The original distribution is used only as
+a development reference; installed packages never look for it.
+
+You still need an electron density or wavefunction from an electronic-structure
+calculation. Atomic coordinates alone do not determine a DDEC analysis:
+
+```text
+Electron-density calculation → py-chargemol DDEC6 analysis → QDR charges
+```
+
+Conda and uv are optional environment and development tools. NumPy is the only
+third-party runtime dependency installed by pip.
+
 ## Usage
+
+### Compute directly from an electron density
+
+For a VASP calculation:
+
+```python
+from py_chargemol import compute_ddec6, read_density, write_density_results
+
+grid = read_density("path/to/vasp/calculation")
+ddec = compute_ddec6(grid)
+qdr = ddec.compute_qdr()
+
+print(ddec.charges)
+print(ddec.analysis.atomic_dipoles)
+print(ddec.bonds.bond_orders)
+print(qdr.charges)
+
+# Optional: write DDEC, bond, radial-moment and QDR output files.
+write_density_results(ddec, "results", qdr=True)
+```
+
+`DDECResult` also exposes Hirshfeld/CM5 charges, radial moments, spherical
+atomic densities, and total molecular multipoles. For magnetic inputs,
+`result.spin.populations` contains atomic spin moments; noncollinear inputs
+also provide integrated spin-gradient diagnostics in `result.spin_gradients`.
+Isolated-atom WFX inputs provide analytic explicit-electron radial moments
+for powers −1 through 4 in `result.wavefunction_radial_moments` when supported
+by the original diagnostic.
+The bond result records the remaining population residual after density
+correction, which is also printed in the bond-order output.
+
+The command-line equivalent is:
+
+```bash
+py-chargemol analyze path/to/vasp/calculation --output-dir results
+```
+
+`--method ddec3` selects the older charge-partitioning method; QDR requires
+DDEC6. `--no-qdr` writes the density analysis without resorption. See
+`py-chargemol analyze --help` for charge, periodicity, and core-electron options.
+The command also honors `charge type` and `print atomic densities` in
+`job_control.txt`; explicit command-line options take precedence.
+Use `--atomic-densities` to export spherical atomic densities and radial integrals,
+or `write_density_results(ddec, "results", atomic_densities=True)` in Python.
+`--no-bonds` (or `<compute bos> .false. </compute bos>` in the job controls)
+skips bond orders, radial moments, atomic-density exports, and QDR. The Python
+equivalent is `compute_ddec6(grid, compute_bos=False)`.
+
+Supported density sources:
+
+| Source | Inputs |
+| --- | --- |
+| VASP 4/5 | `AECCAR2`, `CHGCAR` or `CHG`, and `POTCAR`; `AECCAR0` when available. Explicit core counts can replace POTCAR when the geometry names the elements. |
+| Gaussian WFX | Wavefunction with primitive coefficients, occupations, and optional effective-core-density functions. Tight Gaussian contributions are integrated analytically. |
+| Gaussian cube | Total electron density, or valence density with explicit core counts; optional separate total and spin-density files. |
+| XSF | Scalar valence density, spin-up/spin-down grids, or noncollinear spin components, with explicit core counts. |
+| Python arrays | A `DensityGrid` containing atomic numbers, positions, density, origin, voxel vectors, and periodicity, all in atomic units. |
+
+`read_density` discovers conventional filenames and reads supported settings
+from `job_control.txt`. Explicit function arguments override those settings.
+Its atomic-densities-directory setting is unnecessary because the reference
+data are bundled. The individual `read_cube`, `read_vasp`, `read_wfx`, and
+`read_xsf` functions are also public.
+
+Cube coordinate units follow the signed voxel counts; electron density defaults
+to electrons/bohr³. XSF coordinates are in ångströms, with density also defaulting
+to electrons/bohr³. Reader options support explicit unit conversion, and
+`read_density` honors the original `onetep` and `e_per_angs3` density-format
+settings. Python `DensityGrid` arrays always use atomic units.
+
+For example, a periodic valence-density cube for water with an oxygen
+pseudopotential that replaces two core electrons is read with:
+
+```python
+from py_chargemol import compute_qdr_from_density, read_cube
+
+grid = read_cube(
+    "valence_density.cube",
+    density_kind="valence",
+    core_electrons=[2, 0, 0],  # atom order: O, H, H
+    periodic=(True, True, True),
+)
+qdr = compute_qdr_from_density(grid)
+```
+
+Core counts must match the actual pseudopotentials. For an all-electron cube,
+use `read_cube("total_density.cube")`. Set periodicity explicitly when needed.
+The density integral is checked against the electron count; inconsistent
+charge, units, or core counts raise an error.
 
 ### Python
 
@@ -55,7 +175,8 @@ max_cg_iterations=10, tolerance=1e-12)` returns a `QDRResult`. The directory
 defaults to the current directory. It discovers these input filenames:
 
 - `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
-- `overlap_populations_and_contact_exchanges.txt` (or `overlap_populations.txt`)
+- `overlap_populations_and_contact_exchanges.txt`, `overlap_populations.txt`, or
+  the September 2017 `overlap_populations.xyz`
 
 Pass `charges_file` and `overlaps_file` to choose other input files. A
 nonperiodic single atom needs no overlap file and returns its original charge
@@ -113,10 +234,9 @@ All arguments are keyword-only; `max_cg_iterations=10` and `tolerance=1e-12`
 control the solver. The returned `QDRResult` has the same arrays, diagnostics,
 and moments as `calculate_qdr`.
 
-py-chargemol performs QDR resorption using supplied DDEC6 results. It does not
-run Chargemol or infer DDEC6 charges, multipoles, or overlap populations from
-atomic coordinates. The synthetic values above illustrate the API, not a
-physical DDEC6 analysis.
+This array API performs QDR resorption using supplied DDEC6 results. Use
+`compute_ddec6` to generate those results from an electron density. The synthetic
+values above illustrate the API, not a physical DDEC6 analysis.
 
 #### Work with parsed analysis objects
 
@@ -160,11 +280,10 @@ automatically.
 
 ### Chargemol input compatibility
 
-The Chargemol release on SourceForge (September 2017) writes an
-`overlap_populations.xyz` file, but not
-`overlap_populations_and_contact_exchanges.txt`. The QDR user guide says a
-pre-release Chargemol version must be used to generate both input files, and
-explains how to request it.
+The September 2017 `overlap_populations.xyz` file has the same leading columns
+as the newer text files and is read directly. A development Chargemol release
+is not required. The Python density workflow supplies the analysis and overlaps
+directly to QDR without intermediate files.
 
 ### Command line
 
@@ -185,9 +304,26 @@ Like the Fortran program, the command writes two files to that directory:
 `--charges`, `--overlaps`, `--output`, and `--log` choose other files. See
 `py-chargemol qdr --help`.
 
-## Differences from the Fortran program
+## Compatibility with the original programs
 
-The regression tests compare every worked example with the Fortran program,
+The density engine implements the analyses enabled in the September 2017
+Chargemol program. Output files retain the scientific quantities and familiar
+table layouts, while status messages and filenames use the Python interface.
+Invalid densities, failed partition convergence, and negative valence
+populations raise explicit errors. Quadrupole eigenvalues are computed from
+the complete tensor, including analytic WFX corrections.
+
+Grid validation is not identical to the original executable: the Python API
+permits coarse grids for controlled numerical experiments and does not apply
+all of Chargemol's negative-density rejection thresholds. Electron-count and
+partition checks do not establish grid convergence; physical calculations
+still require a sufficiently resolved input density. Periodic, effective-core,
+and ghost-centre WFX paths have analytic and conservation tests, but were not
+compared against supplied full reference calculations for those cases.
+
+For the QDR port, the following implementation details differ:
+
+The QDR regression tests compare every worked example with the Fortran program,
 allowing one unit in the last printed digit for rounding and checking tiny
 solver residuals against an absolute tolerance of `1e-10`. Some implementation
 details differ:
@@ -220,10 +356,28 @@ outputs from the six worked examples distributed with T. A. Manz's April 9,
 run every example and compare the output with the Fortran program's reference
 output line by line.
 
+The density engine has separate offline regression fixtures for the original
+VASP NaCl and spin-polarized Gaussian ozone calculations, plus numerical
+reference cases for the reference-ion, reshaping, and spin routines.
+During development it was also checked against
+the supplied CP2K water and four Gaussian ozone examples, including charged
+and spin-polarized wavefunctions. Ordinary tests use only packaged fixtures;
+they do not run Chargemol or require a compiler.
+
+The 1,897 reference-ion and core-density text files used at the default radial
+resolution are stored byte-for-byte in compressed, per-element package
+archives. A SHA-256 manifest records their provenance. The installed wheel
+includes these resources.
+
 ## Citation
 
 Publications that use these charges must cite the method, as the license
 requires:
+
+DDEC, bond-order, and spin calculations must also cite the corresponding
+methods listed in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL), including the DDEC6
+papers by T. A. Manz and N. Gabaldon Limas and the Chargemol 3.5 program.
+For QDR charges, cite:
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across
@@ -250,7 +404,7 @@ editable mode and its development tools:
 uv sync
 ```
 
-Alternatively, create the `py-chargemol-dev` conda environment, which also
+Alternatively, create or update the `py-chargemol-dev` conda environment, which also
 installs the package in editable mode with its development tools (see
 [`build_tools/`](https://github.com/LouieSlocombe/py-chargemol/blob/main/build_tools/README.md)):
 
@@ -261,7 +415,8 @@ conda activate py-chargemol-dev
 
 Install the Git hooks once. They then run Ruff, lockfile, workflow security,
 and file hygiene checks before each commit. The hooks skip the reference
-fixture data in `test/worked_examples/` to preserve the original files.
+fixture data in `test/worked_examples/` and the original WFX regression input
+to preserve those files.
 
 ```bash
 uv run prek install
@@ -322,6 +477,15 @@ distribution first.
 │   ├── multipoles.py           # total molecular multipole moments
 │   ├── units.py                # unit conversions
 │   ├── __main__.py             # the py-chargemol command
+│   ├── density/                # independent density-to-DDEC calculations
+│   │   ├── readers.py          # cube, VASP and XSF density input
+│   │   ├── wfx.py              # wavefunctions and analytic Gaussian integrals
+│   │   ├── partition.py        # DDEC6 partitioning and radial constraints
+│   │   ├── ddec3.py            # DDEC3 partitioning
+│   │   ├── cm5.py              # Hirshfeld-to-CM5 charge correction
+│   │   ├── bonds.py            # overlaps, contact exchanges and bond orders
+│   │   ├── spin.py             # collinear and noncollinear spin partitioning
+│   │   └── data/               # bundled reference-ion and core densities
 │   └── qdr/
 │       ├── arrays.py           # direct computation from Python and NumPy arrays
 │       ├── solver.py           # the QDR resorption passes
@@ -337,8 +501,8 @@ distribution first.
 
 ## License
 
-py-chargemol is a derived work of the QDR program. It is distributed under the
-same terms, which
+The QDR implementation retains the original terms, which
 [LICENSE](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE)
-reproduces. Among them: derived works must keep these terms, and published
-results must cite the original research papers.
+reproduces. The density-analysis implementation and reference data retain
+Chargemol's terms in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL). Both require
+attribution and citation of the original methods in published results.

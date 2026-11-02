@@ -107,10 +107,10 @@ jobs:
         run: uvx --from twine twine check --strict dist/*
 
       - name: Smoke test the wheel
-        run: uv run --isolated --no-project --with dist/*.whl py-chargemol --version
+        run: uv run --isolated --no-project --with dist/*.whl python build_tools/smoke_install.py
 
       - name: Smoke test the sdist
-        run: uv run --isolated --no-project --with dist/*.tar.gz python -m py_chargemol --version
+        run: uv run --isolated --no-project --with dist/*.tar.gz python build_tools/smoke_install.py
 
   all-green:
     name: All checks passed
