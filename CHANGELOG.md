@@ -10,6 +10,13 @@ on the regression fixtures, mostly by floating-point rounding.
   from coarser nested grids. It is slower but free of interpolation error,
   which moves the ozone example's charges by about 2e-4 e. The default still
   reproduces Chargemol.
+- Add a closed-form QDR solver: `solver="direct"` on every QDR entry point,
+  `--solver direct` on `py-chargemol qdr`, and `--qdr-solver direct` on
+  `py-chargemol analyze`. Each atom's linear systems are the identity plus a
+  matrix of rank at most five, so they are solved exactly with a 5×5 or 3×3
+  system per atom instead of by conjugate gradients. Results agree with the
+  default conjugate gradients to rounding, and `QDRResult.solver` records the
+  choice. The default still reproduces the QDR program's output.
 - Build WFX density grids about 3× faster by evaluating each pair of primitive
   groups with matrix products instead of a Python loop over primitive pairs.
 - Build WFX density grids about 3× faster again on grids whose voxels lie
