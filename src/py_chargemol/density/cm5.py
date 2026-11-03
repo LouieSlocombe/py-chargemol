@@ -314,30 +314,36 @@ def compute_cm5(
         msg = "lattice_vectors must be a finite 3 by 3 array"
         raise ValueError(msg)
     translations = _translations(cell, periodic)
+    elements, kinds = np.unique(numbers.astype(np.int64), return_inverse=True)
+    coefficients = np.array(
+        [[_coefficient(int(a), int(b)) for b in elements] for a in elements]
+    )
+    radii = _RADII[elements - 1][kinds]
     result = charges.copy()
-    for first in range(len(numbers)):
-        zfirst = int(numbers[first])
-        for second in range(first + 1, len(numbers)):
-            zsecond = int(numbers[second])
-            coefficient = _SPECIAL.get((zfirst, zsecond))
-            if coefficient is None:
-                reverse = _SPECIAL.get((zsecond, zfirst))
-                coefficient = (
-                    -reverse
-                    if reverse is not None
-                    else _DZ[zfirst - 1] - _DZ[zsecond - 1]
-                )
-            distances = (
-                np.linalg.norm(
-                    coordinates[second] + translations - coordinates[first], axis=1
-                )
-                / BOHR_PER_ANGSTROM
+    # Each atom's corrections with all later atoms and their periodic images.
+    for first in range(len(numbers) - 1):
+        others = slice(first + 1, None)
+        distances = (
+            np.linalg.norm(
+                coordinates[others, None, :] + translations - coordinates[first],
+                axis=2,
             )
-            correction = coefficient * float(
-                np.exp(
-                    -_ALPHA * (distances - _RADII[zfirst - 1] - _RADII[zsecond - 1])
-                ).sum()
-            )
-            result[first] += correction
-            result[second] -= correction
+            / BOHR_PER_ANGSTROM
+        )
+        corrections = coefficients[kinds[first], kinds[others]] * np.exp(
+            -_ALPHA * (distances - radii[first] - radii[others, None])
+        ).sum(axis=1)
+        result[first] += corrections.sum()
+        result[others] -= corrections
     return result
+
+
+def _coefficient(first: int, second: int) -> float:
+    """Return the CM5 charge-transfer coefficient for two atomic numbers."""
+    coefficient = _SPECIAL.get((first, second))
+    if coefficient is not None:
+        return coefficient
+    reverse = _SPECIAL.get((second, first))
+    if reverse is not None:
+        return -reverse
+    return float(_DZ[first - 1] - _DZ[second - 1])
