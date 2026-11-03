@@ -584,9 +584,12 @@ class _Construction:
         factor = math.exp(-alpha * beta * separation2 / alpha_sum)
         if factor == 0:
             return 0.0
+        p, q = wave.powers[left], wave.powers[right]
+        # Screening bounds and quadrupole corrections raise either power by two.
+        degree = int(p.max() + q.max()) + 2
         tables = np.array(
             [
-                _axis_overlap(alpha, beta, float(point_a[k]), float(point_b[k]), 12)
+                _axis_overlap(alpha, beta, float(point_a[k]), float(point_b[k]), degree)
                 for k in range(3)
             ]
         )
@@ -596,7 +599,6 @@ class _Construction:
         multiplicity = np.where(rows == columns, 1.0, 2.0)
         total = self.total_matrix[rows, columns]
         spin = self.spin_matrix[rows, columns]
-        p, q = wave.powers[left], wave.powers[right]
         overlaps = factor * _integrals(tables, p, q)
         coefficients = np.where(upper, total * multiplicity, 0.0)
         integrated = float(np.sum(coefficients * overlaps))
