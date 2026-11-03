@@ -37,6 +37,20 @@ def test_cube_order_geometry_and_fortran_exponents(tmp_path: Path) -> None:
     assert grid.pixel_volume == 1
 
 
+def test_cube_rows_with_short_final_lines(tmp_path: Path) -> None:
+    rows = [list(map(str, range(start, start + 8))) for start in range(0, 32, 8)]
+    values = "\n".join(" ".join(row[:6]) + "\n" + " ".join(row[6:]) for row in rows)
+    text = cube_text(values).replace("2 0 0 1", "8 0 0 1")
+    grid = read_cube(write(tmp_path / "rows.cube", text))
+    np.testing.assert_array_equal(grid.density, np.arange(32).reshape((2, 2, 8)))
+
+
+def test_fortran_exponents_across_blank_and_multiple_lines(tmp_path: Path) -> None:
+    values = "0D0 1d0\n\n2.0D+00 3E0\n4d0 5.D0\n6D0 0.7d1"
+    grid = read_cube(write(tmp_path / "fortran.cube", cube_text(values)))
+    np.testing.assert_array_equal(grid.density, np.arange(8).reshape((2, 2, 2)))
+
+
 def test_cube_negative_counts_and_independent_density_units(tmp_path: Path) -> None:
     path = write(tmp_path / "angstrom.cube", cube_text(count=-2))
     grid = read_cube(path, density_unit="angstrom^-3")
@@ -78,7 +92,10 @@ def test_cube_valence_and_core_subtraction(tmp_path: Path) -> None:
         (cube_text("no 1 2 3 4 5 6 7"), "invalid numeric"),
         (cube_text("0 1 2"), "unexpected end"),
         (cube_text("0 1 2 3 4 5 6 7 8"), "too many values"),
+        (cube_text("0\n1 2 3 4 5 6 7 8"), "too many values"),
+        (cube_text("0 1 2 3 4 5 6 7 no"), "invalid numeric"),
         (cube_text() + "another dataset\n", "unexpected data"),
+        (cube_text("0\n1 2 3 4 5 6 7") + "another dataset\n", "unexpected data"),
     ],
 )
 def test_malformed_cubes(tmp_path: Path, text: str, message: str) -> None:
@@ -227,6 +244,12 @@ def test_xsf_periodic_endpoint_planes_and_units(tmp_path: Path) -> None:
     np.testing.assert_allclose(
         grid.positions, np.array([[0.25, 0.5, 0.75]]) * BOHR_PER_ANGSTROM
     )
+
+
+def test_xsf_block_stops_at_the_line_that_fills_it(tmp_path: Path) -> None:
+    text = xsf_text().replace("\n0.1 ", "\n0.1\n", 1)
+    grid = read_xsf(write(tmp_path / "density.xsf", text), core_electrons=[2])
+    np.testing.assert_array_equal(grid.density, np.full((2, 2, 2), 0.1))
 
 
 def test_xsf_collinear_spin_channels(tmp_path: Path) -> None:
