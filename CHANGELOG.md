@@ -2,11 +2,25 @@
 
 ## Unreleased
 
-Faster density analysis and input reading. Results change only by
-floating-point rounding (below 1e-12 on the regression fixtures).
+Faster density analysis and input reading. Results change by less than 2e-11
+on the regression fixtures, mostly by floating-point rounding.
 
+- Add `read_wfx(..., interpolate_diffuse=False)`, which evaluates diffuse
+  Gaussian products directly on the final grid instead of interpolating them
+  from coarser nested grids. It is slower but free of interpolation error,
+  which moves the ozone example's charges by about 2e-4 e. The default still
+  reproduces Chargemol.
 - Build WFX density grids about 3× faster by evaluating each pair of primitive
   groups with matrix products instead of a Python loop over primitive pairs.
+- Build WFX density grids about 3× faster again on grids whose voxels lie
+  along x, y and z, which include every molecular WFX grid. Cartesian
+  Gaussian products are separable, so each pair is assembled from
+  one-dimensional factors and added to the grid as one block. Grids with
+  oblique voxels keep the point-by-point evaluation.
+- Solve the DDEC6 tail-reshaping population constraint exactly with Newton
+  steps instead of bisection, in a few evaluations rather than up to 130.
+  Charges move by up to 2e-11, since bisection stopped within 1e-10 of the
+  target population.
 - Parse density blocks in cube, VASP, and XSF files about 5× faster, with the
   same values and error messages.
 - Speed up DDEC6, DDEC3, core, spin, multipole, bond-order, and CM5 calculations
