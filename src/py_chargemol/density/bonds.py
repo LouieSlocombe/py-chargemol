@@ -281,14 +281,12 @@ def _significant_pair(  # noqa: PLR0913, PLR0917
     pair_cutoff: float,
 ) -> bool:
     separation = int(np.ceil(SCALE * distance + ZERO))
-    upper_bound = 1.0
-    for shell in range(1, separation):
-        other = separation - shell
-        if shell <= NSHELLS and other <= NSHELLS:
-            upper_bound = min(
-                upper_bound,
-                2.0 * (outside[atom_i, shell - 1] + outside[atom_j, other - 1]),
-            )
+    # Shells 1..separation-1 of atom i whose complement also lies within atom j.
+    shells = np.arange(max(1, separation - NSHELLS), min(separation - 1, NSHELLS) + 1)
+    bounds = 2.0 * (
+        outside[atom_i, shells - 1] + outside[atom_j, separation - shells - 1]
+    )
+    upper_bound = min(1.0, float(np.min(bounds, initial=1.0)))
     if upper_bound < pair_cutoff or separation > 2 * NSHELLS:
         return False
     shells_i, shells_j, measures = _overlap_estimate_grid(separation)
@@ -318,18 +316,25 @@ def _candidate_pairs(
         limits = np.where(
             periodic, np.ceil(2.0 * CUTOFF * np.linalg.norm(inverse, axis=0)) + 1, 0
         ).astype(np.int64)
-    translations = list(itertools.product(*(range(-k, k + 1) for k in limits)))
+    translations = np.array(
+        list(itertools.product(*(range(-k, k + 1) for k in limits))), dtype=np.int64
+    )
+    # Lexicographically positive translations pair an atom with its own images.
+    positive = np.array([tuple(shift) > (0, 0, 0) for shift in translations.tolist()])
+    offsets = translations @ lattice_vectors
     for atom_i in range(len(positions)):
-        for atom_j in range(atom_i, len(positions)):
-            for translation in translations:
-                if atom_i == atom_j and translation <= (0, 0, 0):
-                    continue
-                shift = np.asarray(translation, dtype=np.int64)
-                separation = (
-                    positions[atom_j] + shift @ lattice_vectors - positions[atom_i]
-                )
-                if np.linalg.norm(separation) <= 2.0 * CUTOFF:
-                    yield atom_i, atom_j, shift, separation
+        separations = (
+            positions[atom_i:, None, :] + offsets[None, :, :] - positions[atom_i]
+        )
+        within = np.linalg.norm(separations, axis=2) <= 2.0 * CUTOFF
+        within[0] &= positive
+        for other, image in zip(*np.nonzero(within), strict=True):
+            yield (
+                atom_i,
+                atom_i + int(other),
+                translations[image],
+                separations[other, image],
+            )
 
 
 def _pair_integrals(  # noqa: PLR0913, PLR0917
@@ -344,7 +349,9 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
     total_vectors: FloatArray,
     voxel_volume: float,
 ) -> FloatArray:
-    distance_j = np.linalg.norm(sample.displacements - separation, axis=1)
+    # Column-wise squares avoid a slow reduction over the length-3 axis.
+    offset = sample.displacements - separation
+    distance_j = np.sqrt(offset[:, 0] ** 2 + offset[:, 1] ** 2 + offset[:, 2] ** 2)
     shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.int64)
     active = shells_j < NSHELLS
     points = sample.indices[active]
@@ -352,13 +359,14 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
     shells_j = shells_j[active]
     total = total_vectors[points]
     denominator = np.sum(total**2, axis=1)
-    active_density = (denominator > ZERO**2) & (pseudodensity[points] > ZERO)
+    local_pseudo = pseudodensity[points]
+    active_density = (denominator > ZERO**2) & (local_pseudo > ZERO)
     points = points[active_density]
     shells_i = shells_i[active_density]
     shells_j = shells_j[active_density]
     denominator = denominator[active_density]
     prefactor = 2.0 * voxel_volume * density[points]
-    dot_products = np.sum(vectors[atom_i, shells_i] * vectors[atom_j, shells_j], axis=1)
+    dot_products = np.sum(vectors[atom_i][shells_i] * vectors[atom_j][shells_j], axis=1)
     ratio = dot_products / denominator
     integrals = np.asarray(
         [
@@ -366,9 +374,9 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
             np.sum(prefactor * dot_products / total[active_density, 0] ** 2),
             np.sum(
                 prefactor
-                * weights[atom_i, shells_i]
-                * weights[atom_j, shells_j]
-                / pseudodensity[points] ** 2
+                * weights[atom_i][shells_i]
+                * weights[atom_j][shells_j]
+                / local_pseudo[active_density] ** 2
             ),
             (10.0 / 3.0) * np.sum(prefactor * ratio**2),
         ],
