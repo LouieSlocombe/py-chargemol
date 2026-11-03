@@ -37,6 +37,10 @@ on the regression fixtures, mostly by floating-point rounding.
 - Reduce peak memory by about a quarter. Atomic integration samples store int32
   grid `coordinates`, which bond integration reuses, in place of the unused
   image `translations`.
+- Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
+  such as a hydrogen 1s with exponent 6. Its analytic core count could round
+  just above the atomic number. Such counts are now clamped, and the excess is
+  kept as an occupancy correction so electrons are conserved.
 
 ## 1.0.0
 
