@@ -9,6 +9,7 @@ import pytest
 
 from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.qdr import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRSolver
 
 type FloatArray = npt.NDArray[np.float64]
 type Loader = Callable[[str], tuple[DDEC6Analysis, OverlapPairs]]
@@ -74,12 +75,15 @@ def dense_reference(analysis: DDEC6Analysis, pairs: OverlapPairs) -> QDRResult:
     return QDRResult(charges, dipoles, quadrupoles, cg_iterations=0, residual_norm=0)
 
 
+@pytest.mark.parametrize("solver", ["cg", "direct"])
 @pytest.mark.parametrize("example", EXAMPLES)
-def test_matches_exact_dense_solves(load_example: Loader, example: str) -> None:
-    """CG converges within its limit, so it agrees with direct solves."""
+def test_matches_exact_dense_solves(
+    load_example: Loader, example: str, solver: QDRSolver
+) -> None:
+    """CG converges within its limit, so both solvers agree with dense solves."""
     analysis, pairs = load_example(example)
 
-    result = compute_qdr_charges(analysis, pairs)
+    result = compute_qdr_charges(analysis, pairs, solver=solver)
     expected = dense_reference(analysis, pairs)
 
     np.testing.assert_allclose(result.charges, expected.charges, rtol=0, atol=1e-10)
@@ -89,8 +93,32 @@ def test_matches_exact_dense_solves(load_example: Loader, example: str) -> None:
     np.testing.assert_allclose(
         result.atomic_quadrupoles, expected.atomic_quadrupoles, rtol=0, atol=1e-10
     )
-    assert 1 <= result.cg_iterations < 10
+    assert result.solver == solver
+    if solver == "cg":
+        assert 1 <= result.cg_iterations < 10
+    else:
+        assert result.cg_iterations == 0
     assert result.residual_norm < 1e-11
+
+
+def test_direct_solver_needs_no_iterations(load_example: Loader) -> None:
+    analysis, pairs = load_example("ALPO5")
+
+    direct = compute_qdr_charges(
+        analysis, pairs, solver="direct", max_cg_iterations=1, tolerance=1e-3
+    )
+    converged = compute_qdr_charges(analysis, pairs)
+
+    np.testing.assert_allclose(direct.charges, converged.charges, rtol=0, atol=1e-13)
+    assert direct.cg_iterations == 0
+    assert direct.residual_norm < 1e-13
+
+
+def test_unknown_solver_is_rejected(load_example: Loader) -> None:
+    analysis, pairs = load_example("formamide_VASP")
+
+    with pytest.raises(ValueError, match="solver must be 'cg' or 'direct'"):
+        compute_qdr_charges(analysis, pairs, solver="lu")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("example", EXAMPLES)
