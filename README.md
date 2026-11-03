@@ -121,6 +121,13 @@ Its atomic-densities-directory setting is unnecessary because the reference
 data are bundled. The individual `read_cube`, `read_vasp`, `read_wfx`, and
 `read_xsf` functions are also public.
 
+Like Chargemol, `read_wfx` evaluates diffuse Gaussian products on coarser
+nested grids and interpolates them onto the final grid.
+`read_wfx(path, interpolate_diffuse=False)` evaluates them directly on the
+final grid instead. That is slower but free of interpolation error, which
+moves the ozone example's charges by about 2e-4 e, so results then differ
+from Chargemol's at that level.
+
 Cube coordinate units follow the signed voxel counts; electron density defaults
 to electrons/bohr³. XSF coordinates are in ångströms, with density also defaulting
 to electrons/bohr³. Reader options support explicit unit conversion, and
@@ -169,8 +176,8 @@ if result.moments is not None:
 ```
 
 `calculate_qdr(directory=".", *, charges_file=None, overlaps_file=None,
-max_cg_iterations=10, tolerance=1e-12)` returns a `QDRResult`. The directory
-defaults to the current directory. It discovers these input filenames:
+max_cg_iterations=10, tolerance=1e-12, solver="cg")` returns a `QDRResult`. The
+directory defaults to the current directory. It discovers these input filenames:
 
 - `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
 - `overlap_populations_and_contact_exchanges.txt`, `overlap_populations.txt`, or
@@ -179,6 +186,15 @@ defaults to the current directory. It discovers these input filenames:
 Pass `charges_file` and `overlaps_file` to choose other input files. A
 nonperiodic single atom needs no overlap file and returns its original charge
 and atomic multipoles.
+
+Like the QDR program, the default `solver="cg"` solves each atom's linear
+systems by conjugate gradients. Those systems are the identity plus a matrix of
+rank at most five, so `solver="direct"` solves them exactly in closed form with
+a 5×5 or 3×3 system per atom. Conjugate gradients converge in at most six
+iterations, so the two agree to rounding; the direct solver needs no iteration
+limit or tolerance and reports zero `cg_iterations`. Every QDR entry point
+accepts `solver`, including `compute_qdr_from_arrays`, `compute_qdr_from_density`,
+`DDECResult.compute_qdr`, and `write_density_results` (as `qdr_solver`).
 
 For nonperiodic systems, `result.moments` contains the total molecular moments
 about the centre of mass at three levels: `charges` (point charges alone),
@@ -228,9 +244,9 @@ The inputs describe `n` atoms and `m` directed overlap pairs:
 Each bond must appear in both directions with the same population, as in the
 example. For a periodic pair `(i, j)` with translation `t`, also supply `(j, i)`
 with translation `-t`. A zero cell-vector row marks a nonperiodic direction.
-All arguments are keyword-only; `max_cg_iterations=10` and `tolerance=1e-12`
-control the solver. The returned `QDRResult` has the same arrays, diagnostics,
-and moments as `calculate_qdr`.
+All arguments are keyword-only; `max_cg_iterations=10`, `tolerance=1e-12`, and
+`solver="cg"` control the solver. The returned `QDRResult` has the same arrays,
+diagnostics, and moments as `calculate_qdr`.
 
 This array API performs QDR resorption using supplied DDEC6 results. Use
 `compute_ddec6` to generate those results from an electron density. The synthetic
@@ -299,7 +315,10 @@ Like the Fortran program, the command writes two files to that directory:
   cloud parameters, and, for molecules, the total dipole and quadrupole moments.
 - `QDR_charges_computation_logfile.txt`: a log of the run.
 
-`--charges`, `--overlaps`, `--output`, and `--log` choose other files. See
+`--charges`, `--overlaps`, `--output`, and `--log` choose other files.
+`--solver direct` solves the linear systems in closed form instead of by
+conjugate gradients, and the output file says so in place of the iteration
+count; `py-chargemol analyze` takes the same choice as `--qdr-solver`. See
 `py-chargemol qdr --help`.
 
 ## Compatibility with the original programs

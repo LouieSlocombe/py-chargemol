@@ -32,7 +32,7 @@ from py_chargemol.density.partition import PartitionResult, partition_ddec6
 from py_chargemol.density.references import core_reference_density, reference_densities
 from py_chargemol.density.spin import SpinResult, partition_spin
 from py_chargemol.multipoles import MultipoleMoments, total_multipole_moments
-from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRResult, QDRSolver, compute_qdr_charges
 
 _DIMENSIONS = 3
 _TAIL_START_SHELL = 39
@@ -119,12 +119,16 @@ class DDECResult:
             analysis.atomic_quadrupoles,
         )
 
-    def compute_qdr(self) -> QDRResult:
-        """Resorb the computed DDEC6 multipoles into QDR point charges."""
+    def compute_qdr(self, *, solver: QDRSolver = "cg") -> QDRResult:
+        """Resorb the computed DDEC6 multipoles into QDR point charges.
+
+        ``solver`` is ``"cg"`` for the QDR program's conjugate gradients, or
+        ``"direct"`` for an exact closed-form solve.
+        """
         if self.method != "ddec6":
             msg = "QDR resorption requires a DDEC6 analysis"
             raise ValueError(msg)
-        return compute_qdr_charges(self.analysis, self.overlaps)
+        return compute_qdr_charges(self.analysis, self.overlaps, solver=solver)
 
 
 DDEC6Result = DDECResult
@@ -290,9 +294,11 @@ def compute_ddec(
     )
 
 
-def compute_qdr_from_density(grid: DensityGrid) -> QDRResult:
+def compute_qdr_from_density(
+    grid: DensityGrid, *, solver: QDRSolver = "cg"
+) -> QDRResult:
     """Compute DDEC6 and then QDR point charges directly from a density grid."""
-    return compute_ddec6(grid).compute_qdr()
+    return compute_ddec6(grid).compute_qdr(solver=solver)
 
 
 def _assigned(

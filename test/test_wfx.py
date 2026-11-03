@@ -87,6 +87,42 @@ def test_tight_gaussian_is_integrated_analytically(tmp_path: Path) -> None:
     np.testing.assert_allclose(grid.atomic_corrections[0, 5:8], [-1 / 12] * 3)
 
 
+@pytest.mark.parametrize("periodic", [0, 3])
+@pytest.mark.parametrize("excess", [0, 5e-4])
+def test_fully_tight_atom_keeps_excess_core_electrons_as_occupancy(
+    tmp_path: Path, periodic: int, excess: float
+) -> None:
+    # Rounding alone leaves the alpha=6 core count a few ulps above Z = 1.
+    occupation = "<Molecular Orbital Occupation Numbers>\n"
+    text = wavefunction(alpha=6, periodic=periodic).replace(
+        f"{occupation}1", f"{occupation}{1 + excess}"
+    )
+    grid = read_wfx(write(tmp_path / "tight.wfx", text), grid_spacing=0.5)
+    assert grid.core_electrons is not None
+    np.testing.assert_array_equal(grid.core_electrons, [1])
+    np.testing.assert_array_equal(grid.density, 0)
+    assert grid.atomic_corrections is not None
+    electrons = (
+        grid.core_electrons.sum()
+        + grid.density.sum() * grid.pixel_volume
+        + grid.atomic_corrections[:, 0].sum()
+    )
+    assert electrons == pytest.approx(1 + excess, abs=1e-12)
+
+
+def test_tight_core_beyond_atomic_number_is_rejected(tmp_path: Path) -> None:
+    text = (
+        wavefunction(alpha=6, spin="Alpha and Beta")
+        .replace("<Net Charge>\n0", "<Net Charge>\n-1")
+        .replace(
+            "<Molecular Orbital Occupation Numbers>\n1",
+            "<Molecular Orbital Occupation Numbers>\n2",
+        )
+    )
+    with pytest.raises(ValueError, match="core_electrons must lie"):
+        read_wfx(write(tmp_path / "hydride.wfx", text), grid_spacing=0.5)
+
+
 def test_p_orbital_analytic_multipoles_and_beta_spin(tmp_path: Path) -> None:
     grid = read_wfx(
         write(tmp_path / "p.wfx", wavefunction(alpha=3, primitive_type=2, spin="Beta")),
@@ -131,6 +167,31 @@ def test_periodic_gaussian_images_preserve_electron_count(
         grid.lattice_vectors[:periodic], np.eye(3)[:periodic] * 6
     )
     assert grid.density.sum() * grid.pixel_volume == pytest.approx(1, abs=1e-8)
+
+
+@pytest.mark.parametrize(
+    "vectors",
+    [
+        ["8 0 0", f"4 {4 * np.sqrt(3):.16f} 0"],
+        [f"{8 / np.sqrt(2):.16f} {8 / np.sqrt(2):.16f} 0"],
+    ],
+)
+@pytest.mark.parametrize("alpha", [1.0, 3.0])
+def test_oblique_cells_preserve_electron_count(
+    tmp_path: Path, vectors: list[str], alpha: float
+) -> None:
+    # Voxels off the Cartesian axes take the general, point-by-point quadrature.
+    text = wavefunction(alpha=alpha) + (
+        f"\n<Number of Translation Vectors>\n{len(vectors)}\n"
+        "</Number of Translation Vectors>\n"
+        "<Translation Vectors>\n" + "\n".join(vectors) + "\n</Translation Vectors>"
+    )
+    grid = read_wfx(write(tmp_path / "oblique.wfx", text), grid_spacing=0.5)
+    assert np.any(grid.steps != np.diag(np.diag(grid.steps)))
+    assert grid.core_electrons is not None
+    electrons = grid.density.sum() * grid.pixel_volume + grid.core_electrons.sum()
+    assert electrons == pytest.approx(1, abs=1e-9)
+    np.testing.assert_allclose(grid.core_electrons, [1.0 if alpha > 2.5 else 0.0])
 
 
 @pytest.mark.parametrize("spacing", [0, -1, float("nan"), float("inf")])
@@ -361,3 +422,21 @@ def test_diffuse_gaussian_uses_coarse_grid_with_conserved_interpolation(
     # remain positive and cannot create electrons outside that finite domain.
     assert np.all(grid.density >= 0)
     assert 0 < grid.density.sum() * grid.pixel_volume < 1
+
+
+def test_diffuse_gaussian_can_be_evaluated_without_interpolation(
+    tmp_path: Path,
+) -> None:
+    alpha = 0.15
+    path = write(tmp_path / "diffuse.wfx", wavefunction(alpha=alpha))
+    nested = read_wfx(path, grid_spacing=0.5)
+    direct = read_wfx(path, grid_spacing=0.5, interpolate_diffuse=False)
+    indices = np.indices(direct.density.shape).reshape(3, -1).T
+    radii = np.linalg.norm(direct.origin + indices @ direct.steps, axis=1)
+    exact = ((2 * alpha / np.pi) ** 1.5 * np.exp(-2 * alpha * radii**2)).reshape(
+        direct.density.shape
+    )
+    np.testing.assert_allclose(direct.density, exact, rtol=0, atol=1e-12)
+    assert direct.density.sum() * direct.pixel_volume == pytest.approx(1, abs=1e-9)
+    # The default coarse grid for this exponent sum is linearly interpolated.
+    assert np.max(np.abs(nested.density - exact)) > 1e-4

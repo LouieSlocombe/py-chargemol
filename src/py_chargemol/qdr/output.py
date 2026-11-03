@@ -151,10 +151,16 @@ def _lines(
     yield f"The sum of net atomic charges in the unit cell is {total_charge:13.6f}"
     yield f"Two-pass QDR computed using {QDR_PROGRAM_VERSION} {_PORT}"
     yield _BLANK
-    yield (
-        "For each QDR pass, conjugate gradient converged to the linear equation system "
-        f"solution within {result.cg_iterations:6d}  CG iterations."
-    )
+    if result.solver == "direct":
+        yield (
+            "For each QDR pass, the linear equation systems were solved directly, "
+            "in closed form."
+        )
+    else:
+        yield (
+            "For each QDR pass, conjugate gradient converged to the linear equation "
+            f"system solution within {result.cg_iterations:6d}  CG iterations."
+        )
     yield (
         "The maximum final L2 (Euclidean) norm of the residual was "
         f"{fortran_es(result.residual_norm)}"

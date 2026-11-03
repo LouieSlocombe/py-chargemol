@@ -135,10 +135,12 @@ def test_skipped_bond_analysis_omits_dependent_files(
     )
     paths = write_density_results(result, tmp_path)
     assert set(paths) == {"charges", "cm5", "hirshfeld"}
-    for option in ("atomic_densities", "qdr"):
-        destination = tmp_path / option
+    for qdr in (False, True):
+        destination = tmp_path / ("qdr" if qdr else "atomic_densities")
         with pytest.raises(ValueError, match="compute_bos=True"):
-            write_density_results(result, destination, **{option: True})
+            write_density_results(
+                result, destination, qdr=qdr, atomic_densities=not qdr
+            )
         assert not destination.exists()
 
 

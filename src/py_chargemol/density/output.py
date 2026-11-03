@@ -12,6 +12,7 @@ from py_chargemol.density.analysis import DDECResult
 from py_chargemol.density.grid import NSHELLS, SCALE
 from py_chargemol.elements import number_to_symbol
 from py_chargemol.qdr.output import _moment_lines, format_qdr_point_charges
+from py_chargemol.qdr.solver import QDRSolver
 from py_chargemol.units import BOHR_PER_ANGSTROM
 
 _BOND_PRINT_CUTOFF = 0.001
@@ -296,6 +297,7 @@ def write_density_results(
     *,
     qdr: bool = False,
     atomic_densities: bool = False,
+    qdr_solver: QDRSolver = "cg",
 ) -> dict[str, Path]:
     """Write an analysis and return paths keyed by quantity.
 
@@ -303,8 +305,9 @@ def write_density_results(
     bond-order file, CM5 and Hirshfeld charges, three radial-moment files, and
     spin moments when available. If bond analysis was skipped, bond, overlap,
     and radial-moment files are omitted. ``qdr=True`` also writes resorbed charges for
-    a DDEC6 analysis. ``atomic_densities=True`` writes spherical atomic densities
-    with radial integration weights. Existing files with those names are replaced.
+    a DDEC6 analysis, solved with ``qdr_solver`` (see ``DDECResult.compute_qdr``).
+    ``atomic_densities=True`` writes spherical atomic densities with radial
+    integration weights. Existing files with those names are replaced.
     """
     if result.method not in {"ddec6", "ddec3"}:
         msg = "result method must be ddec6 or ddec3"
@@ -339,7 +342,7 @@ def write_density_results(
             format_atomic_densities(result),
         )
     if qdr:
-        resorbed = result.compute_qdr()
+        resorbed = result.compute_qdr(solver=qdr_solver)
         texts["qdr"] = (
             "QDR-DDEC6_point_charges.xyz",
             format_qdr_point_charges(

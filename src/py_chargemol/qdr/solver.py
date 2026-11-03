@@ -22,10 +22,19 @@ This is a port of ``module_QDR_point_charges.f08`` from T. A. Manz's QDR program
 (April 9, 2025). The Fortran solves one atom per OpenMP thread. Here every atom's
 conjugate gradient runs at once on NumPy arrays, with per-atom step lengths and
 convergence, which gives the same iterates.
+
+Both systems have the form ``I + F F^T`` with a factor ``F`` of rank at most five.
+In the quadrupole step ``B diag(c) B^T`` has entries ``w_j w_k ((u_j . u_k)^2 - 1/3)``,
+the Frobenius inner products of the traceless tensors ``w (u u^T - I/3)``, so ``F``
+holds their coordinates in an orthonormal basis of the five traceless symmetric
+tensors. In the dipole step ``F = B``, of rank three. Conjugate gradients therefore
+converge within six iterations, and ``solver="direct"`` instead solves exactly with
+the Woodbury identity ``(I + F F^T)^-1 = I - F (I + F^T F)^-1 F^T``, which needs only
+a 5 by 5 or 3 by 3 symmetric positive definite solve per atom.
 """
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -36,6 +45,11 @@ from py_chargemol.multipoles import MultipoleMoments, total_multipole_moments
 
 type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
+type QDRSolver = Literal["cg", "direct"]
+"""How each atom's linear systems are solved: by conjugate gradients, as in the QDR
+program, or directly in closed form."""
+
+_SOLVERS: Final = ("cg", "direct")
 
 _PASSES: Final = 2
 """Number of quadrupole-then-dipole resorption passes."""
@@ -45,6 +59,20 @@ _QUADRUPOLE_COEFFICIENTS: Final = np.array([-_ONE_THIRD, 1, 2, 2, 1, 2, 1], floa
 _DIPOLE_COEFFICIENTS: Final = np.ones(3)
 _IDENTITY_COMPONENTS: Final = np.array([1, 0, 0, 1, 0, 1], float)
 """The identity tensor in ``xx, xy, xz, yy, yz, zz`` order."""
+
+_TRACELESS_COORDINATES: Final = np.array(
+    [
+        [1 / np.sqrt(2), -1 / np.sqrt(6), 0, 0, 0],
+        [0, 0, np.sqrt(2), 0, 0],
+        [0, 0, 0, np.sqrt(2), 0],
+        [-1 / np.sqrt(2), -1 / np.sqrt(6), 0, 0, 0],
+        [0, 0, 0, 0, np.sqrt(2)],
+        [0, 2 / np.sqrt(6), 0, 0, 0],
+    ]
+)
+"""Maps ``u u^T``, in ``xx, xy, xz, yy, yz, zz`` order, to the coordinates of its
+traceless part in an orthonormal basis: ``(xx - yy)/√2``, ``(2zz - xx - yy)/√6``, and
+``√2`` times ``xy``, ``xz`` and ``yz``."""
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -56,12 +84,14 @@ class QDRResult:
         atomic_dipoles: Residual atomic dipoles in e·bohr, shape ``(n, 3)``.
         atomic_quadrupoles: Residual traceless atomic quadrupoles in e·bohr², ordered
             ``xx, xy, xz, yy, yz, zz``, shape ``(n, 6)``.
-        cg_iterations: Most conjugate gradient iterations any atom took in any step.
-        residual_norm: Largest L2 norm, over the steps, of the final conjugate
-            gradient residual of all atoms together.
+        cg_iterations: Most conjugate gradient iterations any atom took in any step,
+            or zero for the direct solver.
+        residual_norm: Largest L2 norm, over the steps, of the final residual of all
+            atoms' linear systems together.
         moments: Total molecular moments about the centre of mass, or ``None``
             for periodic systems. Includes charges alone, with residual dipoles,
             and with residual quadrupoles.
+        solver: How the linear systems were solved.
     """
 
     charges: FloatArray
@@ -70,6 +100,7 @@ class QDRResult:
     cg_iterations: int
     residual_norm: float
     moments: MultipoleMoments | None = None
+    solver: QDRSolver = "cg"
 
 
 def compute_qdr_charges(
@@ -78,6 +109,7 @@ def compute_qdr_charges(
     *,
     max_cg_iterations: int = 10,
     tolerance: float = 1e-12,
+    solver: QDRSolver = "cg",
 ) -> QDRResult:
     """Compute QDR point charges from in-memory DDEC6 data without file I/O.
 
@@ -91,6 +123,10 @@ def compute_qdr_charges(
             system in each step.
         tolerance: An atom's conjugate gradient stops once the L2 norm of its
             residual is at most this.
+        solver: ``"cg"`` iterates conjugate gradients, as the QDR program does.
+            ``"direct"`` solves each atom's systems exactly in closed form; the
+            iteration limit and tolerance then do not apply, and the results
+            agree with converged conjugate gradients to rounding.
 
     Returns:
         The QDR point charges, residual atomic multipoles, solver statistics,
@@ -120,6 +156,9 @@ def compute_qdr_charges(
     if not np.isfinite(tolerance) or tolerance < 0:
         msg = "tolerance must be finite and nonnegative"
         raise ValueError(msg)
+    if solver not in _SOLVERS:
+        msg = "solver must be 'cg' or 'direct'"
+        raise ValueError(msg)
 
     resorption = _Resorption(
         bonds=_Bonds.from_pairs(analysis, pairs),
@@ -128,6 +167,7 @@ def compute_qdr_charges(
         quadrupoles=np.array(analysis.atomic_quadrupoles, dtype=np.float64, copy=True),
         max_iterations=max_cg_iterations,
         tolerance=tolerance,
+        direct=solver == "direct",
     )
     if len(pairs):
         for _ in range(_PASSES):
@@ -151,6 +191,7 @@ def compute_qdr_charges(
         cg_iterations=resorption.cg_iterations,
         residual_norm=resorption.residual_norm,
         moments=moments,
+        solver=solver,
     )
 
 
@@ -254,6 +295,7 @@ class _Resorption:
     quadrupoles: FloatArray
     max_iterations: int
     tolerance: float
+    direct: bool
     cg_iterations: int = 0
     residual_norm: float = 0.0
 
@@ -269,7 +311,8 @@ class _Resorption:
             _QUADRUPOLE_COEFFICIENTS[1:],
             self.quadrupoles[bonds.owner],
         )
-        yw = self._solve(basis, _QUADRUPOLE_COEFFICIENTS, rhs) * w
+        factor = basis[:, 1:] @ _TRACELESS_COORDINATES
+        yw = self._solve(basis, _QUADRUPOLE_COEFFICIENTS, factor, rhs) * w
 
         self.dipoles += bonds.owner_sum((yw / bonds.length)[:, None] * bonds.direction)
         self.quadrupoles += bonds.owner_sum(
@@ -282,7 +325,7 @@ class _Resorption:
         bonds = self.bonds
         basis = bonds.weight[:, None] * bonds.direction
         rhs = -np.einsum("jk,jk->j", basis, self.dipoles[bonds.owner])
-        y = self._solve(basis, _DIPOLE_COEFFICIENTS, rhs)
+        y = self._solve(basis, _DIPOLE_COEFFICIENTS, basis, rhs)
 
         transferred = y * bonds.weight / bonds.length
         self._transfer_charge(transferred)
@@ -294,22 +337,65 @@ class _Resorption:
         self.charges += self.bonds.owner_sum(amount) - self.bonds.partner_sum(amount)
 
     def _solve(
+        self,
+        basis: FloatArray,
+        coefficients: FloatArray,
+        factor: FloatArray,
+        rhs: FloatArray,
+    ) -> FloatArray:
+        """Solve every atom's ``(I + B diag(c) B^T) y = t``.
+
+        ``factor`` is ``F`` with ``F F^T = B diag(c) B^T``, for the direct solver.
+        The iteration count and residual norm statistics are updated.
+        """
+        if self.direct:
+            return self._solve_directly(basis, coefficients, factor, rhs)
+        return self._conjugate_gradient(basis, coefficients, rhs)
+
+    def _matvec(
+        self, basis: FloatArray, coefficients: FloatArray, vector: FloatArray
+    ) -> FloatArray:
+        """Apply each atom's ``I + B diag(c) B^T`` to its bonds' entries."""
+        projections = self.bonds.owner_sum(basis * vector[:, None]) * coefficients
+        result: FloatArray = vector + np.einsum(
+            "jk,jk->j", basis, projections[self.bonds.owner]
+        )
+        return result
+
+    def _solve_directly(
+        self,
+        basis: FloatArray,
+        coefficients: FloatArray,
+        factor: FloatArray,
+        rhs: FloatArray,
+    ) -> FloatArray:
+        """Solve every atom's system exactly with the Woodbury identity.
+
+        ``y = t - F x`` with ``(I + F^T F) x = F^T t``, a symmetric positive definite
+        system the size of ``F``'s columns. An atom without bonds solves ``x = 0``.
+        The residual of the original system is recorded, as for conjugate gradients.
+        """
+        bonds = self.bonds
+        size = factor.shape[1]
+        outer = (factor[:, :, None] * factor[:, None, :]).reshape(-1, size * size)
+        gram = bonds.owner_sum(outer).reshape(bonds.natoms, size, size)
+        projected = bonds.owner_sum(factor * rhs[:, None])
+        x = np.linalg.solve(gram + np.eye(size), projected[..., None])[..., 0]
+        y: FloatArray = rhs - np.einsum("jk,jk->j", factor, x[bonds.owner])
+        residual = rhs - self._matvec(basis, coefficients, y)
+        self.residual_norm = max(self.residual_norm, float(np.linalg.norm(residual)))
+        return y
+
+    def _conjugate_gradient(
         self, basis: FloatArray, coefficients: FloatArray, rhs: FloatArray
     ) -> FloatArray:
-        """Solve every atom's ``(I + B diag(c) B^T) y = t`` by conjugate gradients.
+        """Solve every atom's system by conjugate gradients.
 
         Each atom's system couples only that atom's bonds, so all of them iterate
         together with per-atom step lengths. An atom stops once its residual norm
         is at most the tolerance, checked before each iteration as in the Fortran.
-        The iteration count and residual norm statistics are updated.
         """
         bonds, owner = self.bonds, self.bonds.owner
-
-        def matvec(p: FloatArray) -> FloatArray:
-            projections = bonds.owner_sum(basis * p[:, None]) * coefficients
-            result: FloatArray = p + np.einsum("jk,jk->j", basis, projections[owner])
-            return result
-
         y = np.zeros_like(rhs)
         residual = rhs.copy()
         search = residual.copy()
@@ -319,7 +405,7 @@ class _Resorption:
             active = np.sqrt(residual_squared) > self.tolerance
             if not active.any():
                 break
-            product = matvec(search)
+            product = self._matvec(basis, coefficients, search)
             alpha = _divide_where(
                 residual_squared, bonds.owner_sum(search * product), active
             )

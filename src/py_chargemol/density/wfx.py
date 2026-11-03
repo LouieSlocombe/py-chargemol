@@ -3,12 +3,15 @@
 This implements the 2017 Chargemol Gaussian-pair grid construction in Python:
 primitive products above exponent sum five are assigned analytically to cores;
 diffuse products use nested grids, pairwise quadrature correction, and linear
-interpolation. No wavefunction converter or external executable is needed.
+interpolation. On grids whose voxels lie along x, y and z, each product is
+built from one-dimensional factors, since Cartesian Gaussians are separable.
+No wavefunction converter or external executable is needed.
 """
 
 import math
 import re
 from dataclasses import dataclass
+from functools import cached_property
 from itertools import product
 from pathlib import Path
 
@@ -34,6 +37,9 @@ _GHOST_NUCLEAR_CHARGE = 0.5
 _ZERO = 1e-10
 _PERIODIC_CUTOFF = 28.0
 _DIMENSIONS = 3
+_NESTED_STRIDES = (1, 2, 3, 4, 6, 8, 12)
+# Each coarse grid is interpolated onto the next finer grid it divides.
+_NESTED_MERGES = ((12, 6), (8, 4), (6, 3), (4, 2), (3, 1), (2, 1))
 _MULTIPOLE_POWERS = np.array(
     [
         (1, 0, 0),
@@ -326,21 +332,32 @@ class _Geometry:
     def lattice(self) -> np.ndarray:
         return np.asarray(self.shape[:, None] * self.steps)
 
-    def points(
-        self, center: np.ndarray, radius: float, stride: int
-    ) -> tuple[np.ndarray, np.ndarray]:
+    @property
+    def axis_aligned(self) -> bool:
+        """Whether the voxel vectors lie along x, y and z, so Gaussians factorize."""
+        return bool(np.all(self.steps == np.diag(np.diag(self.steps))))
+
+    def axes(self, center: np.ndarray, radius: float, stride: int) -> list[np.ndarray]:
+        """Return the fine-grid indices along each axis of a sphere's bounding box."""
         center_grid = (center - self.origin) @ np.linalg.inv(self.steps)
         nearest = nearest_grid_points(center_grid)
         extent = np.ceil(radius * self.extent / CUTOFF).astype(int) + 1
         lower, upper = nearest - extent, nearest + extent
         offset = stride - 2 if stride > 1 else 0
-        counts = self.shape // stride
         axes = []
         for axis, (lo, hi) in enumerate(zip(lower, upper, strict=True)):
             low = lo if self.periodic[axis] else max(lo, 0)
             high = hi if self.periodic[axis] else min(hi, self.shape[axis] - 1)
             start = low + (offset - low) % stride
             axes.append(np.arange(start, high + 1, stride))
+        return axes
+
+    def points(
+        self, center: np.ndarray, radius: float, stride: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        axes = self.axes(center, radius, stride)
+        offset = stride - 2 if stride > 1 else 0
+        counts = self.shape // stride
         # Broadcast the three grid axes; rows of the returned xyz are x, y and z.
         x, y, z = (
             np.multiply.outer(step, axis)
@@ -470,13 +487,24 @@ def _single_atom_radial_moments(
     return moments
 
 
-def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGrid:
+def read_wfx(
+    path: StrPath,
+    *,
+    grid_spacing: float = _GRID_SPACING,
+    interpolate_diffuse: bool = True,
+) -> DensityGrid:
     """Construct a molecular or periodic density grid from a Gaussian WFX wavefunction.
 
     Tight primitive pairs are integrated analytically to preserve core electron
     counts and atomic multipoles. ``grid_spacing`` is in bohr and defaults to
     Chargemol's 0.14 bohr. Cartesian primitive types through H are supported,
     including effective core potentials and optional electron-density functions.
+
+    As in Chargemol, diffuse primitive pairs are evaluated on coarser nested
+    grids and interpolated onto the final grid. ``interpolate_diffuse=False``
+    instead evaluates every pair on the final grid. This is slower, but
+    removes the interpolation error: about 2e-4 e in the ozone example's
+    charges, so results then differ from Chargemol's at that level.
     """
     if not np.isfinite(grid_spacing) or grid_spacing <= 0:
         msg = "grid_spacing must be finite and positive"
@@ -488,9 +516,8 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
     positions = wave.positions[real_atoms]
     geometry = _geometry(positions, wave.periodic_vectors, grid_spacing)
     shape = geometry.shape
-    grids = {
-        stride: np.zeros(tuple(shape // stride)) for stride in (1, 2, 3, 4, 6, 8, 12)
-    }
+    strides = _NESTED_STRIDES if interpolate_diffuse else (1,)
+    grids = {stride: np.zeros(tuple(shape // stride)) for stride in strides}
     spins = {stride: np.zeros_like(values) for stride, values in grids.items()}
     core = np.zeros(tuple(shape))
     core_counts = wave.numbers[real_atoms] - wave.nuclear_charges[real_atoms]
@@ -513,6 +540,7 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
         total_matrix,
         spin_matrix,
         atom_map,
+        nested=interpolate_diffuse,
     )
     integrated = 0.0
     for shift in geometry.image_shifts():
@@ -532,7 +560,7 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
             f"{path}: unnormalized primitive coefficients ({integrated:.8f} electrons)"
         )
         raise ValueError(msg)
-    for source, target in ((12, 6), (8, 4), (6, 3), (4, 2), (3, 1), (2, 1)):
+    for source, target in _NESTED_MERGES if interpolate_diffuse else ():
         grids[target] += _interpolate(grids.pop(source), target, source)
         spins[target] += _interpolate(spins.pop(source), target, source)
     _add_edf(wave, geometry, core)
@@ -541,9 +569,16 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
     negative = core_counts < _ZERO
     corrections[negative, 0] = core_counts[negative]
     core_counts[negative] = 0
+    # An atom whose electrons are all tight can exceed its atomic number by the
+    # normalization error; keep that excess as an occupancy correction too.
+    numbers = wave.numbers[real_atoms]
+    excess = core_counts - numbers
+    full = (excess > 0) & (excess <= _NORMALIZATION_TOLERANCE)
+    corrections[full, 0] = excess[full]
+    core_counts[full] = numbers[full]
     _add_missing_core(wave, geometry, core)
     return DensityGrid(
-        atomic_numbers=wave.numbers[real_atoms],
+        atomic_numbers=numbers,
         positions=positions,
         density=valence,
         origin=geometry.origin,
@@ -570,6 +605,7 @@ class _Construction:
     total_matrix: np.ndarray
     spin_matrix: np.ndarray
     atom_map: np.ndarray
+    nested: bool
 
     def accumulate(
         self, left: np.ndarray, right: np.ndarray, shift: np.ndarray
@@ -584,9 +620,12 @@ class _Construction:
         factor = math.exp(-alpha * beta * separation2 / alpha_sum)
         if factor == 0:
             return 0.0
+        p, q = wave.powers[left], wave.powers[right]
+        # Screening bounds and quadrupole corrections raise either power by two.
+        degree = int(p.max() + q.max()) + 2
         tables = np.array(
             [
-                _axis_overlap(alpha, beta, float(point_a[k]), float(point_b[k]), 12)
+                _axis_overlap(alpha, beta, float(point_a[k]), float(point_b[k]), degree)
                 for k in range(3)
             ]
         )
@@ -596,7 +635,6 @@ class _Construction:
         multiplicity = np.where(rows == columns, 1.0, 2.0)
         total = self.total_matrix[rows, columns]
         spin = self.spin_matrix[rows, columns]
-        p, q = wave.powers[left], wave.powers[right]
         overlaps = factor * _integrals(tables, p, q)
         coefficients = np.where(upper, total * multiplicity, 0.0)
         integrated = float(np.sum(coefficients * overlaps))
@@ -612,7 +650,7 @@ class _Construction:
             + beta * min(wave.nuclear_charges[b], 1)
             > _ANALYTIC_CUTOFF
         )
-        stride = 1 if analytic else _grid_spacing(alpha_sum)
+        stride = _grid_spacing(alpha_sum) if self.nested and not analytic else 1
         center = (alpha * point_a + beta * point_b) / alpha_sum
         radius = math.sqrt(
             max(
@@ -621,15 +659,16 @@ class _Construction:
                 0.25,
             )
         )
-        indices, xyz = geometry.points(center, radius, stride)
-        gaussian = np.exp(-alpha_sum * np.sum((xyz - center[:, None]) ** 2, axis=0))
-        left_values = _monomials(xyz - point_a[:, None], p)
-        right_values = _monomials(xyz - point_b[:, None], q) * (gaussian * factor)
-        sampled = left_values @ right_values.T * (geometry.voxel_volume * stride**3)
-        values = np.einsum("in,in->n", left_values, coefficients @ right_values)
-        spin_values = np.einsum(
-            "in,in->n", left_values, spin_coefficients @ right_values
+        pair = _Pair(point_a, point_b, p, q, alpha_sum, factor, center, radius)
+        sampler: _Box | _Points = (
+            _Box(geometry, pair, stride)
+            if geometry.axis_aligned
+            else _Points(geometry, pair, stride)
         )
+        scale = geometry.voxel_volume * stride**3
+        sampled = sampler.sums() * scale
+        values = sampler.values(coefficients)
+        spin_values = sampler.values(spin_coefficients)
         if analytic:
             for i, j in zip(*np.nonzero(included), strict=True):
                 _analytic_correction(
@@ -649,12 +688,9 @@ class _Construction:
                     self.corrections,
                     sampled_overlap=float(sampled[i, j]),
                 )
-            np.add.at(self.core.ravel(), indices, values)
+            sampler.add(self.core, values)
         else:
-            absolute_left, absolute_right = np.abs(left_values), np.abs(right_values)
-            absolute = (
-                absolute_left @ absolute_right.T * (geometry.voxel_volume * stride**3)
-            )
+            absolute = sampler.sums(absolute=True) * scale
             maximum = (
                 np.abs(coefficients + spin_coefficients)
                 + np.abs(coefficients - spin_coefficients)
@@ -669,25 +705,163 @@ class _Construction:
                 -0.05,
                 0.05,
             )
-            values += np.einsum(
-                "in,in->n", absolute_left, (coefficients * correction) @ absolute_right
-            )
-            spin_values += np.einsum(
-                "in,in->n",
-                absolute_left,
-                (spin_coefficients * correction) @ absolute_right,
-            )
-            np.add.at(self.grids[stride].ravel(), indices, values)
-        np.add.at(self.spins[stride].ravel(), indices, spin_values)
+            values += sampler.values(coefficients * correction, absolute=True)
+            spin_values += sampler.values(spin_coefficients * correction, absolute=True)
+            sampler.add(self.grids[stride], values)
+        sampler.add(self.spins[stride], spin_values)
         return integrated
+
+
+@dataclass(frozen=True)
+class _Pair:
+    """Two primitive groups, whose product is ``factor exp(-exponent |r - center|²)``.
+
+    The product's Cartesian monomials are ``powers`` of the displacement from
+    each group's centre. Grid points beyond ``radius`` are neglected.
+    """
+
+    left_center: np.ndarray
+    right_center: np.ndarray
+    left_powers: np.ndarray
+    right_powers: np.ndarray
+    exponent: float
+    factor: float
+    center: np.ndarray
+    radius: float
+
+
+class _Points:
+    """Primitive products at each grid point within the pair's sphere."""
+
+    def __init__(self, geometry: _Geometry, pair: _Pair, stride: int) -> None:
+        self.indices, xyz = geometry.points(pair.center, pair.radius, stride)
+        gaussian = np.exp(
+            -pair.exponent * np.sum((xyz - pair.center[:, None]) ** 2, axis=0)
+        )
+        self.left = _monomials(xyz - pair.left_center[:, None], pair.left_powers)
+        self.right = _monomials(xyz - pair.right_center[:, None], pair.right_powers) * (
+            gaussian * pair.factor
+        )
+
+    @cached_property
+    def absolute(self) -> tuple[np.ndarray, np.ndarray]:
+        return np.abs(self.left), np.abs(self.right)
+
+    def sums(self, *, absolute: bool = False) -> np.ndarray:
+        """Sum each primitive product, or its magnitude, over the points."""
+        left, right = self.absolute if absolute else (self.left, self.right)
+        return np.asarray(left @ right.T)
+
+    def values(self, coefficients: np.ndarray, *, absolute: bool = False) -> np.ndarray:
+        """Return the coefficient-weighted sum of primitive products at each point."""
+        left, right = self.absolute if absolute else (self.left, self.right)
+        return np.asarray(np.einsum("in,in->n", left, coefficients @ right))
+
+    def add(self, grid: np.ndarray, values: np.ndarray) -> None:
+        np.add.at(grid.ravel(), self.indices, values)
+
+
+class _Box:
+    """Primitive products over the bounding box of the pair's sphere.
+
+    On an axis-aligned grid each Cartesian Gaussian product is a product of x,
+    y and z functions, so exponentials and monomials are evaluated along the
+    box's three axes only. The pairs collapse onto their distinct per-axis
+    power combinations, and the box is added to the grid as one block. Points
+    outside the sphere are masked, which gives the same values as ``_Points``.
+    """
+
+    def __init__(self, geometry: _Geometry, pair: _Pair, stride: int) -> None:
+        axes = geometry.axes(pair.center, pair.radius, stride)
+        offset = stride - 2 if stride > 1 else 0
+        counts = geometry.shape // stride
+        # The wrapped strided index of each axis's first point (zero if none).
+        self.starts = [
+            int(np.sum((axis[:1] - offset) // stride % count))
+            for axis, count in zip(axes, counts, strict=True)
+        ]
+        left_degree = int(pair.left_powers.max())
+        right_degree = int(pair.right_powers.max())
+        self.combinations = tuple(
+            pair.left_powers[:, None, k] * (right_degree + 1)
+            + pair.right_powers[None, :, k]
+            for k in range(3)
+        )
+        self.tables: list[np.ndarray] = []
+        squared: list[np.ndarray] = []
+        for k, axis in enumerate(axes):
+            x = geometry.steps[k, k] * axis + geometry.origin[k]
+            squared.append((x - pair.center[k]) ** 2)
+            gaussian = np.exp(-pair.exponent * squared[-1])
+            if k == 0:
+                gaussian *= pair.factor
+            left = _powers(x - pair.left_center[k], left_degree)
+            right = _powers(x - pair.right_center[k], right_degree) * gaussian
+            self.tables.append((left[:, None] * right[None, :]).reshape(-1, len(x)))
+        x2, y2, z2 = squared
+        self.mask: np.ndarray = (
+            x2[:, None, None] + y2[None, :, None] + z2[None, None, :] <= pair.radius**2
+        )
+
+    @cached_property
+    def absolute(self) -> list[np.ndarray]:
+        return [np.abs(table) for table in self.tables]
+
+    @cached_property
+    def inside(self) -> np.ndarray:
+        return self.mask.astype(np.float64)
+
+    def sums(self, *, absolute: bool = False) -> np.ndarray:
+        """Sum each primitive product, or its magnitude, over the sphere."""
+        x, y, z = self.absolute if absolute else self.tables
+        (a, nx), (b, _), (c, _) = x.shape, y.shape, z.shape
+        partial = np.matmul(y, self.inside @ z.T)
+        moments = (x @ partial.reshape(nx, b * c)).reshape(a, b, c)
+        return np.asarray(moments[self.combinations])
+
+    def values(self, coefficients: np.ndarray, *, absolute: bool = False) -> np.ndarray:
+        """Return the coefficient-weighted sum of primitive products in the box."""
+        x, y, z = self.absolute if absolute else self.tables
+        (a, nx), (b, ny), (c, nz) = x.shape, y.shape, z.shape
+        tensor = np.zeros((a, b, c))
+        np.add.at(tensor, self.combinations, coefficients)
+        partial = y.T @ (tensor @ z)
+        values: np.ndarray = (x.T @ partial.reshape(a, ny * nz)).reshape(nx, ny, nz)
+        values[~self.mask] = 0
+        return values
+
+    def add(self, grid: np.ndarray, values: np.ndarray) -> None:
+        """Add the box from its start, folding periodic images into the cell."""
+        block = []
+        for axis, (start, count) in enumerate(
+            zip(self.starts, grid.shape, strict=True)
+        ):
+            length = values.shape[axis]
+            if start + length <= count:
+                block.append(slice(start, start + length))
+                continue
+            periods = -(-(start + length) // count)
+            padding = [(0, 0)] * 3
+            padding[axis] = (start, periods * count - start - length)
+            padded = np.pad(values, padding)
+            values = padded.reshape(
+                (*padded.shape[:axis], periods, count, *padded.shape[axis + 1 :])
+            ).sum(axis=axis)
+            block.append(slice(None))
+        grid[tuple(block)] += values
+
+
+def _powers(delta: np.ndarray, degree: int) -> np.ndarray:
+    """Return ``delta**k`` for k = 0 to ``degree``, by repeated multiplication."""
+    terms = [np.ones_like(delta)]
+    for _ in range(degree):
+        terms.append(terms[-1] * delta)
+    return np.stack(terms)
 
 
 def _monomials(delta: np.ndarray, powers: np.ndarray) -> np.ndarray:
     """Evaluate each row of Cartesian ``powers`` at ``(3, N)`` displacements."""
-    terms = [np.ones_like(delta)]
-    for _ in range(int(powers.max())):
-        terms.append(terms[-1] * delta)
-    table = np.stack(terms)
+    table = _powers(delta, int(powers.max()))
     return np.asarray(
         table[powers[:, 0], 0] * table[powers[:, 1], 1] * table[powers[:, 2], 2]
     )

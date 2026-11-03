@@ -58,6 +58,19 @@ def test_density_to_qdr_conserves_electrons_and_molecular_symmetry(
     )
 
 
+def test_density_to_qdr_can_solve_directly(
+    hydrogen_density: DensityGrid, tmp_path: Path
+) -> None:
+    result = compute_ddec6(hydrogen_density)
+    direct = compute_qdr_from_density(hydrogen_density, solver="direct")
+    assert direct.solver == "direct"
+    np.testing.assert_allclose(
+        direct.charges, result.compute_qdr().charges, rtol=0, atol=1e-12
+    )
+    paths = write_density_results(result, tmp_path, qdr=True, qdr_solver="direct")
+    assert "solved directly, in closed form" in paths["qdr"].read_text()
+
+
 def test_ddec3_analysis_is_available_and_does_not_masquerade_as_qdr(
     hydrogen_density: DensityGrid,
 ) -> None:
@@ -245,6 +258,19 @@ def test_analyze_cli_runs_without_chargemol(
     assert f"Computed {method.upper()} for 1 atoms" in capsys.readouterr().out
     assert (output / f"{method.upper()}_net_atomic_charges.xyz").is_file()
     assert (output / "QDR-DDEC6_point_charges.xyz").exists() == (method == "ddec6")
+
+
+def test_analyze_cli_selects_the_qdr_solver(tmp_path: Path) -> None:
+    source = tmp_path / "total_density.cube"
+    source.write_text(
+        "single atom\ntotal density\n1 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n1 1 0 0 0\n1\n"
+    )
+    output = tmp_path / "results"
+    arguments = ["analyze", str(source), "--output-dir", str(output)]
+    assert main([*arguments, "--qdr-solver", "direct"]) == 0
+    text = (output / "QDR-DDEC6_point_charges.xyz").read_text()
+    assert "solved directly, in closed form" in text
+    assert "CG iterations" not in text
 
 
 def test_analyze_cli_reports_missing_input(

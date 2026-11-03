@@ -5,7 +5,7 @@ import numpy.typing as npt
 
 from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.elements import ATOMIC_WEIGHTS
-from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRResult, QDRSolver, compute_qdr_charges
 
 type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
@@ -25,6 +25,7 @@ def compute_qdr_from_arrays(  # noqa: PLR0913 -- Each input names a physical arr
     lattice_vectors: npt.ArrayLike | None = None,
     max_cg_iterations: int = 10,
     tolerance: float = 1e-12,
+    solver: QDRSolver = "cg",
 ) -> QDRResult:
     """Compute QDR charges from in-memory data without reading or writing files.
 
@@ -48,6 +49,9 @@ def compute_qdr_from_arrays(  # noqa: PLR0913 -- Each input names a physical arr
             Defaults to a nonperiodic system. A zero row is nonperiodic.
         max_cg_iterations: Positive conjugate gradient iteration limit per step.
         tolerance: Finite nonnegative residual tolerance per atom.
+        solver: ``"cg"`` for conjugate gradients, as in the QDR program, or
+            ``"direct"`` for an exact closed-form solve; see
+            :func:`compute_qdr_charges`.
 
     Returns:
         QDR point charges, residual atomic multipoles, solver statistics, and
@@ -101,6 +105,7 @@ def compute_qdr_from_arrays(  # noqa: PLR0913 -- Each input names a physical arr
         pairs,
         max_cg_iterations=max_cg_iterations,
         tolerance=tolerance,
+        solver=solver,
     )
 
 
