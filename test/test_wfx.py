@@ -133,6 +133,31 @@ def test_periodic_gaussian_images_preserve_electron_count(
     assert grid.density.sum() * grid.pixel_volume == pytest.approx(1, abs=1e-8)
 
 
+@pytest.mark.parametrize(
+    "vectors",
+    [
+        ["8 0 0", f"4 {4 * np.sqrt(3):.16f} 0"],
+        [f"{8 / np.sqrt(2):.16f} {8 / np.sqrt(2):.16f} 0"],
+    ],
+)
+@pytest.mark.parametrize("alpha", [1.0, 3.0])
+def test_oblique_cells_preserve_electron_count(
+    tmp_path: Path, vectors: list[str], alpha: float
+) -> None:
+    # Voxels off the Cartesian axes take the general, point-by-point quadrature.
+    text = wavefunction(alpha=alpha) + (
+        f"\n<Number of Translation Vectors>\n{len(vectors)}\n"
+        "</Number of Translation Vectors>\n"
+        "<Translation Vectors>\n" + "\n".join(vectors) + "\n</Translation Vectors>"
+    )
+    grid = read_wfx(write(tmp_path / "oblique.wfx", text), grid_spacing=0.5)
+    assert np.any(grid.steps != np.diag(np.diag(grid.steps)))
+    assert grid.core_electrons is not None
+    electrons = grid.density.sum() * grid.pixel_volume + grid.core_electrons.sum()
+    assert electrons == pytest.approx(1, abs=1e-9)
+    np.testing.assert_allclose(grid.core_electrons, [1.0 if alpha > 2.5 else 0.0])
+
+
 @pytest.mark.parametrize("spacing", [0, -1, float("nan"), float("inf")])
 def test_invalid_spacing(tmp_path: Path, spacing: float) -> None:
     with pytest.raises(ValueError, match="grid_spacing"):
