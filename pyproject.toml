@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "py-chargemol"
-version = "0.1.0"
+version = "1.0.0"
 description = "DDEC6, DDEC3, and QDR atomic charges from electron densities in Python."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -25,11 +25,12 @@ keywords = [
   "QDR",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Chemistry",
   "Typing :: Typed",
 ]

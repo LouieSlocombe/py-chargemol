@@ -24,18 +24,17 @@ atoms, use the DDEC6 net atomic charges, which are not resorbed.
 Python 3.14 or newer is required. NumPy 2.3.3 or newer is the only runtime
 dependency and is installed automatically by pip.
 
-To use this checkout, run this from the repository root in your Python
-environment:
-
-```bash
-python -m pip install .
-py-chargemol --version
-```
-
-For a published release, install by package name:
+Install the latest release from PyPI:
 
 ```bash
 python -m pip install py-chargemol
+py-chargemol --version
+```
+
+To install from a checkout instead, run this from the repository root:
+
+```bash
+python -m pip install .
 ```
 
 See [Development](#development) for an editable install and developer tools, and the
@@ -370,9 +369,10 @@ includes these resources.
 
 Publications using these analyses must cite the original methods, as the
 licenses require. For DDEC, bond-order, and spin calculations, cite the methods
-listed in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL), including the DDEC6 papers by
-T. A. Manz and N. Gabaldon Limas and the Chargemol 3.5 program. For QDR charges,
-cite:
+listed in
+[LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL),
+including the DDEC6 papers by T. A. Manz and N. Gabaldon Limas and the
+Chargemol 3.5 program. For QDR charges, cite:
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across
@@ -499,5 +499,7 @@ distribution first.
 The QDR implementation retains the original terms, which
 [LICENSE](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE)
 reproduces. The density-analysis implementation and reference data retain
-Chargemol's terms in [LICENSE-CHARGEMOL](LICENSE-CHARGEMOL). Both require
+Chargemol's terms in
+[LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL).
+Both require
 attribution and citation of the original methods in published results.

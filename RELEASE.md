@@ -1,6 +1,6 @@
 # Releasing py-chargemol
 
-The next release is **0.1.0**, with Git tag **v0.1.0**. Its release notes are in
+The next release is **1.0.0**, with Git tag **v1.0.0**. Its release notes are in
 [CHANGELOG.md](CHANGELOG.md). Publishing a GitHub release triggers the PyPI
 upload; a draft release does not.
 
@@ -61,8 +61,8 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
 
 After the release changes and first-release setup have been reviewed:
 
-1. Tag the verified release commit as `v0.1.0` and push that tag.
-2. Create a GitHub release for that tag using the 0.1.0 changelog entry as its
+1. Tag the verified release commit as `v1.0.0` and push that tag.
+2. Create a GitHub release for that tag using the 1.0.0 changelog entry as its
    notes, then publish it when ready to upload to PyPI.
 3. Watch the **Release** workflow. It verifies the tag matches the package
    version, runs the full CI workflow on that tag, checks distribution metadata,
@@ -71,7 +71,7 @@ After the release changes and first-release setup have been reviewed:
 4. Check the PyPI project page and test installation outside the checkout:
 
    ```bash
-   uv run --isolated --no-project --with py-chargemol==0.1.0 py-chargemol --version
+   uv run --isolated --no-project --with py-chargemol==1.0.0 py-chargemol --version
    ```
 
 If validation fails, fix the issue before publishing. If a version has already
