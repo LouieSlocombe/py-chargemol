@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from py_chargemol.density.grid import NSHELLS, SCALE
+from py_chargemol.density.grid import NSHELLS, SCALE, reciprocal
 from py_chargemol.density.grid import (
     RadialSample as AtomicSample,
 )
@@ -54,10 +54,17 @@ class PartitionResult:
     iterations: int
 
 
+def local_densities(
+    density: FloatArray, samples: Sequence[AtomicSample]
+) -> list[FloatArray]:
+    """Gather the density at each atom's sample points once per partition."""
+    return [density[sample.indices] for sample in samples]
+
+
 def _shell_statistics(
     weights: FloatArray,
     samples: Sequence[AtomicSample],
-    density: FloatArray,
+    densities: Sequence[FloatArray],
     total: FloatArray,
     threshold: float = _ZERO,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
@@ -65,12 +72,14 @@ def _shell_statistics(
     points, assigned, weighted_points, weighted_density = (
         np.zeros(shape) for _ in range(4)
     )
-    for atom, sample in enumerate(samples):
-        valid = total[sample.indices] > threshold
-        indices, shells = sample.indices[valid], sample.shells[valid]
-        fractions = weights[atom, shells] / total[indices]
-        local = fractions * density[indices]
-        points[atom] = np.bincount(shells, minlength=NSHELLS)
+    inverse = reciprocal(total, threshold)
+    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+        # Points below the threshold contribute zeros rather than being removed.
+        local_inverse = inverse[sample.indices]
+        shells = sample.shells
+        fractions = weights[atom][shells] * local_inverse
+        local = fractions * density
+        points[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
         assigned[atom] = np.bincount(shells, weights=local, minlength=NSHELLS)
         weighted_points[atom] = np.bincount(
             shells, weights=fractions, minlength=NSHELLS
@@ -102,7 +111,8 @@ def _normalize_population(
 def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     atomic_numbers: IntArray,
     samples: Sequence[AtomicSample],
-    density: FloatArray,
+    densities: Sequence[FloatArray],
+    size: int,
     pixel_volume: float,
     core_electrons: FloatArray,
     core_population: FloatArray,
@@ -114,9 +124,9 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     hirshfeld = np.zeros(len(samples))
     charges = np.zeros(len(samples))
     for step in range(2):
-        total = pseudodensity(weights, samples, density.size)
-        localized_total = pseudodensity(weights**4, samples, density.size)
-        _, assigned, _, _ = _shell_statistics(weights, samples, density, total)
+        total = pseudodensity(weights, samples, size)
+        localized_total = pseudodensity(weights**4, samples, size)
+        _, assigned, _, _ = _shell_statistics(weights, samples, densities, total)
         populations, normalization = _normalize_population(
             assigned,
             pixel_volume,
@@ -125,12 +135,14 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
             valence_electrons,
         )
         localized_population = np.zeros(len(samples))
-        for atom, sample in enumerate(samples):
-            valid = total[sample.indices] > _ZERO
-            indices, shells = sample.indices[valid], sample.shells[valid]
-            localized_population[atom] = pixel_volume * np.sum(
-                weights[atom, shells] ** 4 * density[indices] / localized_total[indices]
+        for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+            localized = np.divide(
+                weights[atom, sample.shells] ** 4 * density,
+                localized_total[sample.indices],
+                out=np.zeros(len(density)),
+                where=total[sample.indices] > _ZERO,
             )
+            localized_population[atom] = pixel_volume * np.sum(localized)
         localized_population += occupancy_correction - core_electrons
         localized_population *= normalization
         charges = atomic_numbers - core_electrons - populations
@@ -146,7 +158,8 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
     weights: FloatArray,
     atomic_numbers: IntArray,
     samples: Sequence[AtomicSample],
-    density: FloatArray,
+    densities: Sequence[FloatArray],
+    size: int,
     pixel_volume: float,
     core_electrons: FloatArray,
     core_population: FloatArray,
@@ -154,9 +167,9 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
     valence_electrons: float,
     reference_charges: FloatArray,
 ) -> FloatArray:
-    total = pseudodensity(weights, samples, density.size)
+    total = pseudodensity(weights, samples, size)
     points, assigned, _, _ = _shell_statistics(
-        weights, samples, density, total, _ZERO**2
+        weights, samples, densities, total, _ZERO**2
     )
     sigma = np.divide(assigned, points, out=np.zeros_like(assigned), where=points > 0)
     population = assigned.sum(axis=1) * pixel_volume
@@ -181,13 +194,17 @@ def _tail_exponents(
     total = pseudodensity(conditioned, samples, size)
     tau = np.ones_like(conditioned)
     for atom, sample in enumerate(samples):
-        valid = total[sample.indices] > _ZERO**2
-        indices, shells = sample.indices[valid], sample.shells[valid]
-        roots = np.sqrt(total[indices])
-        denominator = np.bincount(shells, weights=roots, minlength=NSHELLS)
-        numerator = np.bincount(
-            shells, weights=conditioned[atom, shells] / roots, minlength=NSHELLS
+        local_total = total[sample.indices]
+        valid = local_total > _ZERO**2
+        roots = np.sqrt(local_total, out=np.zeros(len(local_total)), where=valid)
+        ratios = np.divide(
+            conditioned[atom, sample.shells],
+            roots,
+            out=np.zeros(len(roots)),
+            where=valid,
         )
+        denominator = np.bincount(sample.shells, weights=roots, minlength=NSHELLS)
+        numerator = np.bincount(sample.shells, weights=ratios, minlength=NSHELLS)
         np.divide(numerator, denominator, out=tau[atom], where=denominator > 0)
     first = np.exp(-1.75 * (1 - tau**2) / SCALE)
     constraint = (1 - tau**2) / 2.5
@@ -219,10 +236,12 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     if valence_electrons <= 0:
         msg = "DDEC6 partitioning requires a positive number of valence electrons"
         raise ValueError(msg)
+    densities = local_densities(density, samples)
     weights, reference_charges, hirshfeld, charges = _reference_steps(
         atomic_numbers,
         samples,
-        density,
+        densities,
+        density.size,
         pixel_volume,
         core_electrons,
         core_population,
@@ -233,7 +252,8 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         weights,
         atomic_numbers,
         samples,
-        density,
+        densities,
+        density.size,
         pixel_volume,
         core_electrons,
         core_population,
@@ -249,7 +269,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     for iteration in range(_FIRST_ITERATION, 501):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, weighted_points, weighted_density = _shell_statistics(
-            weights, samples, density, total
+            weights, samples, densities, total
         )
         spherical = np.divide(
             assigned, points, out=np.zeros_like(assigned), where=points > 0

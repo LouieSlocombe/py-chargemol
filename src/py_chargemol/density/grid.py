@@ -218,9 +218,21 @@ def sum_radial_weights(
     """Accumulate radial atomic weights, including repeated periodic images."""
     result = np.zeros(size)
     for radial, sample in zip(weights, samples, strict=True):
-        result += np.bincount(
-            sample.indices, weights=radial[sample.shells], minlength=size
-        )
+        np.add.at(result, sample.indices, radial[sample.shells])
+    return result
+
+
+def reciprocal(
+    values: npt.NDArray[np.float64], threshold: float = ZERO
+) -> npt.NDArray[np.float64]:
+    """Return ``1 / values`` where values exceed ``threshold``, and zero elsewhere.
+
+    Multiplying sampled weights by this grid replaces a masked division per
+    sample point, which dominates the cost of each partition iteration.
+    """
+    result: npt.NDArray[np.float64] = np.divide(
+        1.0, values, out=np.zeros_like(values), where=values > threshold
+    )
     return result
 
 

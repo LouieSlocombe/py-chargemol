@@ -23,6 +23,7 @@ from py_chargemol.density.grid import (
     RadialSample,
     integration_extent,
     nearest_grid_points,
+    reciprocal,
 )
 
 _CHARGE_TOLERANCE = 1e-5
@@ -137,13 +138,13 @@ def _spherical_average(
 ) -> tuple[FloatArray, FloatArray]:
     averages = np.zeros_like(weights)
     shell_populations = np.zeros_like(weights)
+    inverse = reciprocal(pseudodensity)
     for atom, sample in enumerate(samples):
-        active = pseudodensity[sample.indices] > ZERO
-        points = sample.indices[active]
-        shells = sample.shells[active]
-        assigned = density[points] * weights[atom, shells] / pseudodensity[points]
+        local_inverse = inverse[sample.indices]
+        shells = sample.shells
+        assigned = density[sample.indices] * weights[atom][shells] * local_inverse
         sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
-        counts = np.bincount(shells, minlength=NSHELLS)
+        counts = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
         np.divide(sums, counts, out=averages[atom], where=counts > 0)
         shell_populations[atom] = sums * voxel_volume
     return averages, shell_populations
@@ -362,14 +363,15 @@ def _summed_exchange(
     for atom, sample in enumerate(samples):
         total = total_vectors[sample.indices]
         denominator = np.sum(total**2, axis=1)
-        active = denominator > ZERO**2
-        local = vectors[atom, sample.shells[active]]
-        product = np.sum(local * (total[active] - local), axis=1)
-        summed[atom] = (
-            2.0
-            * voxel_volume
-            * np.sum(density[sample.indices[active]] * product / denominator[active])
+        local = vectors[atom, sample.shells]
+        product = np.sum(local * (total - local), axis=1)
+        exchange = np.divide(
+            density[sample.indices] * product,
+            denominator,
+            out=np.zeros(len(denominator)),
+            where=denominator > ZERO**2,
         )
+        summed[atom] = 2.0 * voxel_volume * np.sum(exchange)
     return summed
 
 

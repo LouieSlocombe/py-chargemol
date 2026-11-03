@@ -14,6 +14,7 @@ from py_chargemol.density.grid import (
     SCALE,
     ZERO,
     AtomicSample,
+    reciprocal,
     sum_radial_weights,
 )
 
@@ -53,7 +54,8 @@ def partition_core(
     if not np.any(core_electrons):
         return CoreResult(np.zeros_like(density), populations, weights, density * 0)
     pseudo = sum_radial_weights(weights, samples, len(density))
-    local, counts, averages = _local_averages(density, weights, pseudo, samples)
+    densities = [density[sample.indices] for sample in samples]
+    local, counts, averages = _local_averages(densities, weights, pseudo, samples)
     for iteration in range(200):
         updated = np.array([np.sum(value) for value in local]) * pixel_volume
         change = np.max(np.abs(updated - populations))
@@ -62,7 +64,7 @@ def partition_core(
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        local, counts, averages = _local_averages(density, weights, pseudo, samples)
+        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
     populations = np.array([np.sum(value) for value in local]) * pixel_volume
 
     for _ in range(40):
@@ -76,17 +78,16 @@ def partition_core(
                 factor = min(delta / (sum_cubes * pixel_volume), 0.25 / largest**2)
             significant = np.where(values > ZERO**2, values, 0.0)
             corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
-            adjusted += np.bincount(
-                sample.indices, weights=corrected, minlength=len(density)
-            )
+            np.add.at(adjusted, sample.indices, corrected)
         density = adjusted
-        local, counts, averages = _local_averages(density, weights, pseudo, samples)
+        densities = [density[sample.indices] for sample in samples]
+        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
         populations = np.array([np.sum(value) for value in local]) * pixel_volume
         if np.max(np.abs(core_electrons - populations)) < _CHARGE_TOLERANCE:
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        local, counts, averages = _local_averages(density, weights, pseudo, samples)
+        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
     if np.max(np.abs(core_electrons - populations)) >= _CHARGE_TOLERANCE:
         msg = (
             "core density could not be corrected to the requested electron populations"
@@ -120,7 +121,7 @@ def dominant_occupancy_correction(
 
 
 def _local_averages(
-    density: np.ndarray,
+    densities: Sequence[np.ndarray],
     weights: np.ndarray,
     pseudo: np.ndarray,
     samples: Sequence[AtomicSample],
@@ -128,16 +129,14 @@ def _local_averages(
     local = []
     counts = np.zeros_like(weights)
     averages = np.zeros_like(weights)
-    for atom, sample in enumerate(samples):
-        valid = pseudo[sample.indices] > ZERO
-        values = np.divide(
-            weights[atom, sample.shells] * density[sample.indices],
-            pseudo[sample.indices],
-            out=np.zeros(len(sample.indices)),
-            where=valid,
-        )
+    inverse = reciprocal(pseudo)
+    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+        local_inverse = inverse[sample.indices]
+        values = weights[atom][sample.shells] * density * local_inverse
         local.append(values)
-        counts[atom] = np.bincount(sample.shells[valid], minlength=NSHELLS)
+        counts[atom] = np.bincount(
+            sample.shells, weights=local_inverse > 0, minlength=NSHELLS
+        )
         sums = np.bincount(sample.shells, weights=values, minlength=NSHELLS)
         averages[atom] = np.divide(
             sums, counts[atom], out=np.zeros(NSHELLS), where=counts[atom] > 0
