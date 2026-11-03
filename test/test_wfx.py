@@ -386,3 +386,21 @@ def test_diffuse_gaussian_uses_coarse_grid_with_conserved_interpolation(
     # remain positive and cannot create electrons outside that finite domain.
     assert np.all(grid.density >= 0)
     assert 0 < grid.density.sum() * grid.pixel_volume < 1
+
+
+def test_diffuse_gaussian_can_be_evaluated_without_interpolation(
+    tmp_path: Path,
+) -> None:
+    alpha = 0.15
+    path = write(tmp_path / "diffuse.wfx", wavefunction(alpha=alpha))
+    nested = read_wfx(path, grid_spacing=0.5)
+    direct = read_wfx(path, grid_spacing=0.5, interpolate_diffuse=False)
+    indices = np.indices(direct.density.shape).reshape(3, -1).T
+    radii = np.linalg.norm(direct.origin + indices @ direct.steps, axis=1)
+    exact = ((2 * alpha / np.pi) ** 1.5 * np.exp(-2 * alpha * radii**2)).reshape(
+        direct.density.shape
+    )
+    np.testing.assert_allclose(direct.density, exact, rtol=0, atol=1e-12)
+    assert direct.density.sum() * direct.pixel_volume == pytest.approx(1, abs=1e-9)
+    # The default coarse grid for this exponent sum is linearly interpolated.
+    assert np.max(np.abs(nested.density - exact)) > 1e-4

@@ -121,6 +121,13 @@ Its atomic-densities-directory setting is unnecessary because the reference
 data are bundled. The individual `read_cube`, `read_vasp`, `read_wfx`, and
 `read_xsf` functions are also public.
 
+Like Chargemol, `read_wfx` evaluates diffuse Gaussian products on coarser
+nested grids and interpolates them onto the final grid.
+`read_wfx(path, interpolate_diffuse=False)` evaluates them directly on the
+final grid instead. That is slower but free of interpolation error, which
+moves the ozone example's charges by about 2e-4 e, so results then differ
+from Chargemol's at that level.
+
 Cube coordinate units follow the signed voxel counts; electron density defaults
 to electrons/bohr³. XSF coordinates are in ångströms, with density also defaulting
 to electrons/bohr³. Reader options support explicit unit conversion, and

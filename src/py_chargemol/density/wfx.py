@@ -37,6 +37,9 @@ _GHOST_NUCLEAR_CHARGE = 0.5
 _ZERO = 1e-10
 _PERIODIC_CUTOFF = 28.0
 _DIMENSIONS = 3
+_NESTED_STRIDES = (1, 2, 3, 4, 6, 8, 12)
+# Each coarse grid is interpolated onto the next finer grid it divides.
+_NESTED_MERGES = ((12, 6), (8, 4), (6, 3), (4, 2), (3, 1), (2, 1))
 _MULTIPOLE_POWERS = np.array(
     [
         (1, 0, 0),
@@ -484,13 +487,24 @@ def _single_atom_radial_moments(
     return moments
 
 
-def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGrid:
+def read_wfx(
+    path: StrPath,
+    *,
+    grid_spacing: float = _GRID_SPACING,
+    interpolate_diffuse: bool = True,
+) -> DensityGrid:
     """Construct a molecular or periodic density grid from a Gaussian WFX wavefunction.
 
     Tight primitive pairs are integrated analytically to preserve core electron
     counts and atomic multipoles. ``grid_spacing`` is in bohr and defaults to
     Chargemol's 0.14 bohr. Cartesian primitive types through H are supported,
     including effective core potentials and optional electron-density functions.
+
+    As in Chargemol, diffuse primitive pairs are evaluated on coarser nested
+    grids and interpolated onto the final grid. ``interpolate_diffuse=False``
+    instead evaluates every pair on the final grid. This is slower, but
+    removes the interpolation error: about 2e-4 e in the ozone example's
+    charges, so results then differ from Chargemol's at that level.
     """
     if not np.isfinite(grid_spacing) or grid_spacing <= 0:
         msg = "grid_spacing must be finite and positive"
@@ -502,9 +516,8 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
     positions = wave.positions[real_atoms]
     geometry = _geometry(positions, wave.periodic_vectors, grid_spacing)
     shape = geometry.shape
-    grids = {
-        stride: np.zeros(tuple(shape // stride)) for stride in (1, 2, 3, 4, 6, 8, 12)
-    }
+    strides = _NESTED_STRIDES if interpolate_diffuse else (1,)
+    grids = {stride: np.zeros(tuple(shape // stride)) for stride in strides}
     spins = {stride: np.zeros_like(values) for stride, values in grids.items()}
     core = np.zeros(tuple(shape))
     core_counts = wave.numbers[real_atoms] - wave.nuclear_charges[real_atoms]
@@ -527,6 +540,7 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
         total_matrix,
         spin_matrix,
         atom_map,
+        nested=interpolate_diffuse,
     )
     integrated = 0.0
     for shift in geometry.image_shifts():
@@ -546,7 +560,7 @@ def read_wfx(path: StrPath, *, grid_spacing: float = _GRID_SPACING) -> DensityGr
             f"{path}: unnormalized primitive coefficients ({integrated:.8f} electrons)"
         )
         raise ValueError(msg)
-    for source, target in ((12, 6), (8, 4), (6, 3), (4, 2), (3, 1), (2, 1)):
+    for source, target in _NESTED_MERGES if interpolate_diffuse else ():
         grids[target] += _interpolate(grids.pop(source), target, source)
         spins[target] += _interpolate(spins.pop(source), target, source)
     _add_edf(wave, geometry, core)
@@ -584,6 +598,7 @@ class _Construction:
     total_matrix: np.ndarray
     spin_matrix: np.ndarray
     atom_map: np.ndarray
+    nested: bool
 
     def accumulate(
         self, left: np.ndarray, right: np.ndarray, shift: np.ndarray
@@ -628,7 +643,7 @@ class _Construction:
             + beta * min(wave.nuclear_charges[b], 1)
             > _ANALYTIC_CUTOFF
         )
-        stride = 1 if analytic else _grid_spacing(alpha_sum)
+        stride = _grid_spacing(alpha_sum) if self.nested and not analytic else 1
         center = (alpha * point_a + beta * point_b) / alpha_sum
         radius = math.sqrt(
             max(
