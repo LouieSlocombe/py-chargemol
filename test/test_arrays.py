@@ -9,7 +9,7 @@ import pytest
 
 from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.qdr.arrays import compute_qdr_from_arrays
-from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRResult, QDRSolver, compute_qdr_charges
 
 type Inputs = dict[str, npt.ArrayLike]
 type Loader = Callable[[str], tuple[DDEC6Analysis, OverlapPairs]]
@@ -44,10 +44,13 @@ def calculate(inputs: Inputs) -> QDRResult:
     )
 
 
+@pytest.mark.parametrize("solver", ["cg", "direct"])
 @pytest.mark.parametrize(
     "example", ["formamide_VASP", "BN_nanotube", "ALPO5", "CO_molecule"]
 )
-def test_matches_calculation_from_analysis(load_example: Loader, example: str) -> None:
+def test_matches_calculation_from_analysis(
+    load_example: Loader, example: str, solver: QDRSolver
+) -> None:
     analysis, pairs = load_example(example)
     result = compute_qdr_from_arrays(
         atomic_numbers=analysis.atomic_numbers,
@@ -62,8 +65,11 @@ def test_matches_calculation_from_analysis(load_example: Loader, example: str) -
         lattice_vectors=analysis.lattice_vectors,
         max_cg_iterations=1,
         tolerance=1e-9,
+        solver=solver,
     )
-    expected = compute_qdr_charges(analysis, pairs, max_cg_iterations=1, tolerance=1e-9)
+    expected = compute_qdr_charges(
+        analysis, pairs, max_cg_iterations=1, tolerance=1e-9, solver=solver
+    )
 
     np.testing.assert_array_equal(result.charges, expected.charges)
     np.testing.assert_array_equal(result.atomic_dipoles, expected.atomic_dipoles)

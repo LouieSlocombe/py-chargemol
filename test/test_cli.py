@@ -1,6 +1,7 @@
 """Tests for the package metadata and command-line interface."""
 
 import logging
+import re
 from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
@@ -9,6 +10,8 @@ import pytest
 
 from py_chargemol import __version__
 from py_chargemol.__main__ import build_parser, main
+
+DATE = re.compile(r" \d{4}/\d{2}/\d{2}  \d{2}:\d{2}:\d{2}")
 
 
 @pytest.fixture
@@ -54,6 +57,38 @@ def test_qdr_writes_into_the_input_directory(
     assert (co_inputs / "QDR_charges_computation_logfile.txt").is_file()
     assert capsys.readouterr().out == (
         f"Wrote QDR point charges for 2 atoms to {output}\n"
+    )
+
+
+def test_qdr_can_solve_directly(copy_example: Callable[[str], Path]) -> None:
+    directory = copy_example("ALPO5")
+    iterative, direct = directory / "cg.xyz", directory / "direct.xyz"
+
+    assert main(["qdr", str(directory), "--output", str(iterative)]) == 0
+    arguments = ["qdr", str(directory), "--output", str(direct)]
+    assert main([*arguments, "--solver", "direct"]) == 0
+
+    log = (directory / "QDR_charges_computation_logfile.txt").read_text()
+    assert "Solved each atom's linear systems directly, in closed form" in log
+    assert "conjugate gradient" not in log
+    differing = [
+        new
+        for old, new in zip(
+            iterative.read_text().splitlines(),
+            direct.read_text().splitlines(),
+            strict=True,
+        )
+        if old != new
+    ]
+    assert differing[0] == (
+        "For each QDR pass, the linear equation systems were solved directly, "
+        "in closed form."
+    )
+    # Charges and multipoles agree at every printed digit; only the residual norm
+    # and timestamp may differ besides.
+    assert all(
+        line.startswith("The maximum final L2 (Euclidean) norm") or DATE.fullmatch(line)
+        for line in differing[1:]
     )
 
 

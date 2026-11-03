@@ -18,7 +18,7 @@ from py_chargemol.ddec6 import (
 )
 from py_chargemol.multipoles import MultipoleMoments
 from py_chargemol.qdr.output import QDR_PROGRAM_VERSION, write_qdr_point_charges
-from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRResult, QDRSolver, compute_qdr_charges
 
 CHARGE_FILES: Final = (
     "DDEC6_net_atomic_charges.xyz",
@@ -42,13 +42,14 @@ LOG_FILE: Final = "QDR_charges_computation_logfile.txt"
 logger = logging.getLogger(__name__)
 
 
-def calculate_qdr(
+def calculate_qdr(  # noqa: PLR0913 -- Input files and solver settings.
     directory: StrPath = ".",
     *,
     charges_file: StrPath | None = None,
     overlaps_file: StrPath | None = None,
     max_cg_iterations: int = 10,
     tolerance: float = 1e-12,
+    solver: QDRSolver = "cg",
 ) -> QDRResult:
     """Return QDR results from a Chargemol directory without writing any files.
 
@@ -60,6 +61,8 @@ def calculate_qdr(
             directory or absolute. Otherwise discover :data:`OVERLAP_FILES`.
         max_cg_iterations: Positive conjugate gradient iteration limit per step.
         tolerance: Finite, nonnegative residual tolerance in each atomic solve.
+        solver: ``"cg"`` for conjugate gradients, as in the QDR program, or
+            ``"direct"`` for an exact closed-form solve.
 
     Returns:
         Charges, residual atomic multipoles, solver statistics, and total moments
@@ -89,7 +92,11 @@ def calculate_qdr(
             _input_path(directory, overlaps_file, OVERLAP_FILES)
         )
     return compute_qdr_charges(
-        analysis, pairs, max_cg_iterations=max_cg_iterations, tolerance=tolerance
+        analysis,
+        pairs,
+        max_cg_iterations=max_cg_iterations,
+        tolerance=tolerance,
+        solver=solver,
     )
 
 
@@ -99,6 +106,7 @@ def run_qdr(
     charges_file: StrPath | None = None,
     overlaps_file: StrPath | None = None,
     output_file: StrPath | None = None,
+    solver: QDRSolver = "cg",
 ) -> QDRResult | None:
     """Compute QDR point charges for a Chargemol calculation and write them out.
 
@@ -113,6 +121,8 @@ def run_qdr(
             :data:`OVERLAP_FILES` found in ``directory``.
         output_file: Where to write the QDR point charges. By default,
             :data:`OUTPUT_FILE` in ``directory``.
+        solver: ``"cg"`` for conjugate gradients, which reproduces the QDR
+            program's output, or ``"direct"`` for an exact closed-form solve.
 
     Returns:
         The QDR results, or ``None`` for a single atom.
@@ -149,10 +159,13 @@ def run_qdr(
     logger.info("Input file reading took %.6f seconds", read - started)
 
     logger.info("Computing the QDR point charges")
-    result = compute_qdr_charges(analysis, pairs)
+    result = compute_qdr_charges(analysis, pairs, solver=solver)
     solved = time.perf_counter()
     logger.info("Solved QDR linear equation system in %.6f seconds", solved - read)
-    logger.info("Most conjugate gradient iterations: %d", result.cg_iterations)
+    if result.solver == "direct":
+        logger.info("Solved each atom's linear systems directly, in closed form")
+    else:
+        logger.info("Most conjugate gradient iterations: %d", result.cg_iterations)
     logger.info("Largest final residual norm: %.7E", result.residual_norm)
 
     moments = result.moments

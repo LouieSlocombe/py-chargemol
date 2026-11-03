@@ -10,10 +10,11 @@ reads a Chargemol directory and returns results without writing files.
 from py_chargemol.qdr.arrays import compute_qdr_from_arrays
 from py_chargemol.qdr.output import format_qdr_point_charges, write_qdr_point_charges
 from py_chargemol.qdr.run import calculate_qdr, run_qdr
-from py_chargemol.qdr.solver import QDRResult, compute_qdr_charges
+from py_chargemol.qdr.solver import QDRResult, QDRSolver, compute_qdr_charges
 
 __all__ = [
     "QDRResult",
+    "QDRSolver",
     "calculate_qdr",
     "compute_qdr_charges",
     "compute_qdr_from_arrays",

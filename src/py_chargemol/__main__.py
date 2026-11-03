@@ -54,6 +54,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"QDR point charge file (default: DIR/{OUTPUT_FILE})",
     )
     qdr.add_argument("--log", type=Path, help=f"log file (default: DIR/{LOG_FILE})")
+    qdr.add_argument(
+        "--solver",
+        choices=("cg", "direct"),
+        default="cg",
+        help=(
+            "linear solver: conjugate gradients as in the QDR program (default), "
+            "or an exact closed-form solve"
+        ),
+    )
     analyze = commands.add_parser(
         "analyze",
         help="compute DDEC charges and QDR directly from an electron density",
@@ -93,6 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--output-dir", type=Path, default=Path())
     analyze.add_argument(
         "--no-qdr", action="store_true", help="write only the DDEC analysis"
+    )
+    analyze.add_argument(
+        "--qdr-solver",
+        choices=("cg", "direct"),
+        default="cg",
+        help="QDR linear solver, as for the qdr command (default: cg)",
     )
     analyze.add_argument(
         "--atomic-densities",
@@ -153,6 +168,7 @@ def _analyze(arguments: argparse.Namespace) -> int:
             arguments.output_dir,
             qdr=method == "ddec6" and not arguments.no_qdr and compute_bos,
             atomic_densities=bool(atomic_densities) and compute_bos,
+            qdr_solver=arguments.qdr_solver,
         )
     except (OSError, ValueError) as error:
         return _error(str(error), command="analyze")
@@ -180,6 +196,7 @@ def _qdr(arguments: argparse.Namespace) -> int:
             charges_file=arguments.charges,
             overlaps_file=arguments.overlaps,
             output_file=arguments.output,
+            solver=arguments.solver,
         )
     except (OSError, ValueError) as error:
         package_logger.error("%s. Program will terminate.", error)

@@ -46,6 +46,17 @@ def assert_same_result(actual: QDRResult, expected: QDRResult) -> None:
     assert actual.residual_norm == expected.residual_norm
 
 
+def test_calculate_passes_on_the_solver(
+    copy_example: Copier, load_example: Loader
+) -> None:
+    result = calculate_qdr(copy_example("ALPO5"), solver="direct")
+
+    assert result.solver == "direct"
+    assert_same_result(
+        result, compute_qdr_charges(*load_example("ALPO5"), solver="direct")
+    )
+
+
 @pytest.mark.parametrize("example", EXAMPLES)
 @pytest.mark.parametrize("existing_outputs", [False, True])
 def test_calculate_returns_results_without_writing_files(
