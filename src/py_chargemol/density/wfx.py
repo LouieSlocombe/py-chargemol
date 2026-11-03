@@ -569,9 +569,16 @@ def read_wfx(
     negative = core_counts < _ZERO
     corrections[negative, 0] = core_counts[negative]
     core_counts[negative] = 0
+    # An atom whose electrons are all tight can exceed its atomic number by the
+    # normalization error; keep that excess as an occupancy correction too.
+    numbers = wave.numbers[real_atoms]
+    excess = core_counts - numbers
+    full = (excess > 0) & (excess <= _NORMALIZATION_TOLERANCE)
+    corrections[full, 0] = excess[full]
+    core_counts[full] = numbers[full]
     _add_missing_core(wave, geometry, core)
     return DensityGrid(
-        atomic_numbers=wave.numbers[real_atoms],
+        atomic_numbers=numbers,
         positions=positions,
         density=valence,
         origin=geometry.origin,

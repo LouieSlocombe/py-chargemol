@@ -87,6 +87,42 @@ def test_tight_gaussian_is_integrated_analytically(tmp_path: Path) -> None:
     np.testing.assert_allclose(grid.atomic_corrections[0, 5:8], [-1 / 12] * 3)
 
 
+@pytest.mark.parametrize("periodic", [0, 3])
+@pytest.mark.parametrize("excess", [0, 5e-4])
+def test_fully_tight_atom_keeps_excess_core_electrons_as_occupancy(
+    tmp_path: Path, periodic: int, excess: float
+) -> None:
+    # Rounding alone leaves the alpha=6 core count a few ulps above Z = 1.
+    occupation = "<Molecular Orbital Occupation Numbers>\n"
+    text = wavefunction(alpha=6, periodic=periodic).replace(
+        f"{occupation}1", f"{occupation}{1 + excess}"
+    )
+    grid = read_wfx(write(tmp_path / "tight.wfx", text), grid_spacing=0.5)
+    assert grid.core_electrons is not None
+    np.testing.assert_array_equal(grid.core_electrons, [1])
+    np.testing.assert_array_equal(grid.density, 0)
+    assert grid.atomic_corrections is not None
+    electrons = (
+        grid.core_electrons.sum()
+        + grid.density.sum() * grid.pixel_volume
+        + grid.atomic_corrections[:, 0].sum()
+    )
+    assert electrons == pytest.approx(1 + excess, abs=1e-12)
+
+
+def test_tight_core_beyond_atomic_number_is_rejected(tmp_path: Path) -> None:
+    text = (
+        wavefunction(alpha=6, spin="Alpha and Beta")
+        .replace("<Net Charge>\n0", "<Net Charge>\n-1")
+        .replace(
+            "<Molecular Orbital Occupation Numbers>\n1",
+            "<Molecular Orbital Occupation Numbers>\n2",
+        )
+    )
+    with pytest.raises(ValueError, match="core_electrons must lie"):
+        read_wfx(write(tmp_path / "hydride.wfx", text), grid_spacing=0.5)
+
+
 def test_p_orbital_analytic_multipoles_and_beta_spin(tmp_path: Path) -> None:
     grid = read_wfx(
         write(tmp_path / "p.wfx", wavefunction(alpha=3, primitive_type=2, spin="Beta")),
