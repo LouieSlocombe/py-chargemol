@@ -298,6 +298,11 @@ def _integral(tables: np.ndarray, p: np.ndarray, q: np.ndarray, factor: float) -
     return float(factor * np.prod(tables[np.arange(3), p, q]))
 
 
+def _integrals(tables: np.ndarray, p: np.ndarray, q: np.ndarray) -> np.ndarray:
+    """Return the unscaled overlap of every row of ``p`` with every row of ``q``."""
+    return np.asarray(np.prod(tables[np.arange(3), p[:, None], q[None, :]], axis=-1))
+
+
 def _grid_spacing(alpha_sum: float) -> int:
     for spacing, denominator in ((1, 1), (2, 9 / 4), (3, 4), (4, 9), (6, 16), (8, 36)):
         if alpha_sum > _COARSE_CUTOFF / denominator:
@@ -329,21 +334,31 @@ class _Geometry:
         extent = np.ceil(radius * self.extent / CUTOFF).astype(int) + 1
         lower, upper = nearest - extent, nearest + extent
         offset = stride - 2 if stride > 1 else 0
+        counts = self.shape // stride
         axes = []
         for axis, (lo, hi) in enumerate(zip(lower, upper, strict=True)):
             low = lo if self.periodic[axis] else max(lo, 0)
             high = hi if self.periodic[axis] else min(hi, self.shape[axis] - 1)
             start = low + (offset - low) % stride
             axes.append(np.arange(start, high + 1, stride))
-        points = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
-        xyz = points @ self.steps + self.origin
-        keep = np.sum((xyz - center) ** 2, axis=1) <= radius**2
-        points, xyz = points[keep], xyz[keep]
-        indices = np.ravel_multi_index(
-            (((points - offset) // stride) % (self.shape // stride)).T,
-            tuple(self.shape // stride),
+        # Broadcast the three grid axes; rows of the returned xyz are x, y and z.
+        x, y, z = (
+            np.multiply.outer(step, axis)
+            for axis, step in zip(axes, self.steps, strict=True)
         )
-        return indices, xyz
+        xyz = (
+            x[:, :, None, None]
+            + y[:, None, :, None]
+            + z[:, None, None, :]
+            + self.origin[:, None, None, None]
+        )
+        keep = np.sum((xyz - center[:, None, None, None]) ** 2, axis=0) <= radius**2
+        i, j, k = (
+            ((axis - offset) // stride) % n
+            for axis, n in zip(axes, counts, strict=True)
+        )
+        indices = (i[:, None, None] * counts[1] + j[None, :, None]) * counts[2] + k
+        return indices[keep], xyz[:, keep]
 
     def image_shifts(self) -> np.ndarray:
         lengths, sines = _lengths_and_sines(self.lattice)
@@ -560,13 +575,6 @@ class _Construction:
         self, left: np.ndarray, right: np.ndarray, shift: np.ndarray
     ) -> float:
         wave, geometry = self.wave, self.geometry
-        grids, spins, core = self.grids, self.spins, self.core
-        core_counts, corrections = self.core_counts, self.corrections
-        total_matrix, spin_matrix, atom_map = (
-            self.total_matrix,
-            self.spin_matrix,
-            self.atom_map,
-        )
         i0, j0 = int(left[0]), int(right[0])
         a, b = int(wave.centers[i0]), int(wave.centers[j0])
         alpha, beta = float(wave.exponents[i0]), float(wave.exponents[j0])
@@ -582,6 +590,23 @@ class _Construction:
                 for k in range(3)
             ]
         )
+        # Each primitive pair (i, j >= i) of the two groups is one matrix element.
+        rows, columns = np.meshgrid(left, right, indexing="ij")
+        upper = columns >= rows
+        multiplicity = np.where(rows == columns, 1.0, 2.0)
+        total = self.total_matrix[rows, columns]
+        spin = self.spin_matrix[rows, columns]
+        p, q = wave.powers[left], wave.powers[right]
+        overlaps = factor * _integrals(tables, p, q)
+        coefficients = np.where(upper, total * multiplicity, 0.0)
+        integrated = float(np.sum(coefficients * overlaps))
+        included = upper & _included_pairs(
+            tables, p, q, factor, a == b, alpha_sum, total, spin
+        )
+        if not np.any(included):
+            return integrated
+        coefficients = np.where(included, coefficients, 0.0)
+        spin_coefficients = np.where(included, spin * multiplicity, 0.0)
         analytic = (
             alpha * min(wave.nuclear_charges[a], 1)
             + beta * min(wave.nuclear_charges[b], 1)
@@ -597,93 +622,98 @@ class _Construction:
             )
         )
         indices, xyz = geometry.points(center, radius, stride)
-        gaussian = np.exp(-alpha_sum * np.sum((xyz - center) ** 2, axis=1)) * factor
-        delta_a, delta_b = xyz - point_a, xyz - point_b
-        values, spin_values = np.zeros(len(xyz)), np.zeros(len(xyz))
-        integrated = 0.0
-        for i in left:
-            for j in right:
-                if j < i:
-                    continue
-                p, q = wave.powers[i], wave.powers[j]
-                coefficient = float(total_matrix[i, j]) * (1 if i == j else 2)
-                spin_coefficient = float(spin_matrix[i, j]) * (1 if i == j else 2)
-                overlap = _integral(tables, p, q, factor)
-                integrated += coefficient * overlap
-                if not _include_pair(
-                    tables,
-                    p,
-                    q,
-                    factor,
-                    a == b,
-                    alpha_sum,
-                    total_matrix[i, j],
-                    spin_matrix[i, j],
-                ):
-                    continue
-                polynomial = np.prod(delta_a**p * delta_b**q, axis=1)
-                pair = polynomial * gaussian
-                if analytic:
-                    _analytic_correction(
-                        tables,
-                        p,
-                        q,
-                        factor,
-                        alpha,
-                        beta,
-                        coefficient,
-                        spin_coefficient,
-                        wave.nuclear_charges[a],
-                        wave.nuclear_charges[b],
-                        int(atom_map[a]),
-                        int(atom_map[b]),
-                        core_counts,
-                        corrections,
-                        sampled_overlap=float(pair.sum() * geometry.voxel_volume),
-                    )
-                else:
-                    absolute = np.abs(pair)
-                    quadrature = float(pair.sum() * geometry.voxel_volume * stride**3)
-                    absolute_integral = float(
-                        absolute.sum() * geometry.voxel_volume * stride**3
-                    )
-                    maximum = (
-                        abs(coefficient + spin_coefficient)
-                        + abs(coefficient - spin_coefficient)
-                    ) / 2
-                    if maximum * absolute_integral > _OVERLAP_TOLERANCE:
-                        correction = np.clip(
-                            (overlap - quadrature) / absolute_integral, -0.05, 0.05
-                        )
-                        pair += correction * absolute
-                values += coefficient * pair
-                spin_values += spin_coefficient * pair
+        gaussian = np.exp(-alpha_sum * np.sum((xyz - center[:, None]) ** 2, axis=0))
+        left_values = _monomials(xyz - point_a[:, None], p)
+        right_values = _monomials(xyz - point_b[:, None], q) * (gaussian * factor)
+        sampled = left_values @ right_values.T * (geometry.voxel_volume * stride**3)
+        values = np.einsum("in,in->n", left_values, coefficients @ right_values)
+        spin_values = np.einsum(
+            "in,in->n", left_values, spin_coefficients @ right_values
+        )
         if analytic:
-            np.add.at(core.ravel(), indices, values)
+            for i, j in zip(*np.nonzero(included), strict=True):
+                _analytic_correction(
+                    tables,
+                    p[i],
+                    q[j],
+                    factor,
+                    alpha,
+                    beta,
+                    float(coefficients[i, j]),
+                    float(spin_coefficients[i, j]),
+                    wave.nuclear_charges[a],
+                    wave.nuclear_charges[b],
+                    int(self.atom_map[a]),
+                    int(self.atom_map[b]),
+                    self.core_counts,
+                    self.corrections,
+                    sampled_overlap=float(sampled[i, j]),
+                )
+            np.add.at(self.core.ravel(), indices, values)
         else:
-            np.add.at(grids[stride].ravel(), indices, values)
-        np.add.at(spins[stride].ravel(), indices, spin_values)
+            absolute_left, absolute_right = np.abs(left_values), np.abs(right_values)
+            absolute = (
+                absolute_left @ absolute_right.T * (geometry.voxel_volume * stride**3)
+            )
+            maximum = (
+                np.abs(coefficients + spin_coefficients)
+                + np.abs(coefficients - spin_coefficients)
+            ) / 2
+            correction = np.clip(
+                np.divide(
+                    overlaps - sampled,
+                    absolute,
+                    out=np.zeros_like(absolute),
+                    where=maximum * absolute > _OVERLAP_TOLERANCE,
+                ),
+                -0.05,
+                0.05,
+            )
+            values += np.einsum(
+                "in,in->n", absolute_left, (coefficients * correction) @ absolute_right
+            )
+            spin_values += np.einsum(
+                "in,in->n",
+                absolute_left,
+                (spin_coefficients * correction) @ absolute_right,
+            )
+            np.add.at(self.grids[stride].ravel(), indices, values)
+        np.add.at(self.spins[stride].ravel(), indices, spin_values)
         return integrated
 
 
-def _include_pair(  # noqa: PLR0913, PLR0917 -- Both Gaussian factors define the overlap bound.
+def _monomials(delta: np.ndarray, powers: np.ndarray) -> np.ndarray:
+    """Evaluate each row of Cartesian ``powers`` at ``(3, N)`` displacements."""
+    terms = [np.ones_like(delta)]
+    for _ in range(int(powers.max())):
+        terms.append(terms[-1] * delta)
+    table = np.stack(terms)
+    return np.asarray(
+        table[powers[:, 0], 0] * table[powers[:, 1], 1] * table[powers[:, 2], 2]
+    )
+
+
+def _included_pairs(  # noqa: PLR0913, PLR0917 -- Both Gaussian factors define the overlap bound.
     tables: np.ndarray,
     p: np.ndarray,
     q: np.ndarray,
     factor: float,
     same_center: bool,
     alpha_sum: float,
-    total: float,
-    spin: float,
-) -> bool:
+    total: np.ndarray,
+    spin: np.ndarray,
+) -> np.ndarray:
+    """Screen every primitive pair by its bound on the absolute overlap."""
+    p, q = p[:, None], q[None, :]
     if same_center:
-        p, q = p + q, np.zeros(3, dtype=int)
+        p, q = p + q, np.zeros_like(q)
     if alpha_sum > 1:
         p, q = 2 * (p // 2), 2 * (q // 2)
     else:
         p, q = 2 * ((p + 1) // 2), 2 * ((q + 1) // 2)
-    maximum = (abs(total + spin) + abs(total - spin)) / 2
-    return maximum * _integral(tables, p, q, factor) >= _OVERLAP_TOLERANCE
+    maximum = (np.abs(total + spin) + np.abs(total - spin)) / 2
+    bound = factor * np.prod(tables[np.arange(3), p, q], axis=-1)
+    return np.asarray(maximum * bound >= _OVERLAP_TOLERANCE)
 
 
 def _analytic_correction(  # noqa: PLR0913, PLR0917 -- Two Gaussian centers and their atomic accumulators.
@@ -735,14 +765,14 @@ def _add_edf(wave: _Wavefunction, geometry: _Geometry, core: np.ndarray) -> None
         strict=True,
     ):
         indices, xyz = geometry.points(wave.positions[center], CUTOFF, 1)
-        delta = xyz - wave.positions[center]
+        delta = xyz - wave.positions[center][:, None]
         np.add.at(
             core.ravel(),
             indices,
             (
                 coefficient
-                * np.prod(delta**powers, axis=1)
-                * np.exp(-alpha * np.sum(delta**2, axis=1))
+                * np.prod(delta ** powers[:, None], axis=0)
+                * np.exp(-alpha * np.sum(delta**2, axis=0))
             ),
         )
 
@@ -761,7 +791,9 @@ def _add_missing_core(
         radial = core_reference_density(int(number), missing)
         indices, xyz = geometry.points(position, CUTOFF, 1)
         shells = (
-            np.ceil(SCALE * np.linalg.norm(xyz - position, axis=1) + 1e-10).astype(int)
+            np.ceil(
+                SCALE * np.linalg.norm(xyz - position[:, None], axis=0) + 1e-10
+            ).astype(int)
             - 1
         )
         keep = shells < NSHELLS
