@@ -20,6 +20,7 @@ from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
     ZERO,
+    AtomicSample,
     RadialSample,
     integration_extent,
     nearest_grid_points,
@@ -82,6 +83,8 @@ class _PairDomains:
     extent: IntArray
     shape: IntArray
     coordinates: tuple[IntArray, ...]
+    # First grid coordinates of samples known to be in lexicographic order.
+    sorted_first: tuple[IntArray | None, ...]
 
 
 def _pair_domains(
@@ -95,11 +98,21 @@ def _pair_domains(
     extent = integration_extent(steps)
     centers = (positions - origin) @ inverse
     coordinates = tuple(
-        nearest_grid_points(sample.displacements @ inverse + centers[atom])
+        sample.coordinates
+        if isinstance(sample, AtomicSample)
+        else nearest_grid_points(sample.displacements @ inverse + centers[atom])
         for atom, sample in enumerate(samples)
     )
+    sorted_first = tuple(
+        np.ascontiguousarray(sample.coordinates[:, 0])
+        if isinstance(sample, AtomicSample)
+        else None
+        for sample in samples
+    )
     shape = nearest_grid_points(np.diag(lattice_vectors @ inverse))
-    return _PairDomains(nearest_grid_points(centers), extent, shape, coordinates)
+    return _PairDomains(
+        nearest_grid_points(centers), extent, shape, coordinates, sorted_first
+    )
 
 
 def _shared_domain(  # noqa: PLR0913, PLR0917
@@ -122,10 +135,22 @@ def _shared_domain(  # noqa: PLR0913, PLR0917
         domain.extent + np.minimum(center_i, center_j),
         nearest_grid_points(domain.extent * multiplier + middle) + 2,
     )
-    coordinates = domain.coordinates[atom_i]
+    # Sorted samples are first narrowed to the slab between the first bounds.
+    first = domain.sorted_first[atom_i]
+    window = (
+        slice(None)
+        if first is None
+        else slice(
+            int(np.searchsorted(first, lower[0], side="left")),
+            int(np.searchsorted(first, upper[0], side="right")),
+        )
+    )
+    coordinates = domain.coordinates[atom_i][window]
     active = np.all((coordinates >= lower) & (coordinates <= upper), axis=1)
     return _PairSample(
-        sample.indices[active], sample.shells[active], sample.displacements[active]
+        sample.indices[window][active],
+        sample.shells[window][active],
+        sample.displacements[window][active],
     )
 
 
