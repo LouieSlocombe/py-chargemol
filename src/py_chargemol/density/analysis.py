@@ -25,6 +25,7 @@ from py_chargemol.density.grid import (
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
+    reciprocal,
     sum_radial_weights,
 )
 from py_chargemol.density.partition import PartitionResult, partition_ddec6
@@ -254,7 +255,8 @@ def compute_ddec(
         radial_shell_weights = np.stack(
             [
                 np.bincount(
-                    sample.shells[partition.pseudodensity[sample.indices] > ZERO],
+                    sample.shells,
+                    weights=partition.pseudodensity[sample.indices] > ZERO,
                     minlength=NSHELLS,
                 )
                 * grid.pixel_volume
@@ -294,15 +296,12 @@ def compute_qdr_from_density(grid: DensityGrid) -> QDRResult:
 
 
 def _assigned(
-    radial: np.ndarray, density: np.ndarray, pseudo: np.ndarray, sample: AtomicSample
+    radial: np.ndarray, density: np.ndarray, inverse: np.ndarray, sample: AtomicSample
 ) -> np.ndarray:
-    assigned: np.ndarray = np.divide(
-        radial[sample.shells] * density[sample.indices],
-        pseudo[sample.indices],
-        out=np.zeros(len(sample.indices)),
-        where=pseudo[sample.indices] > ZERO,
+    """Assign density by radial weight, given the reciprocal pseudodensity."""
+    return np.asarray(
+        radial[sample.shells] * density[sample.indices] * inverse[sample.indices]
     )
-    return assigned
 
 
 def _multipoles(
@@ -314,19 +313,17 @@ def _multipoles(
 ) -> tuple[np.ndarray, np.ndarray]:
     dipoles = np.zeros((grid.natoms, 3))
     quadrupoles = np.zeros((grid.natoms, 6))
+    total_inverse = reciprocal(partition.pseudodensity)
+    core_inverse = reciprocal(core.pseudodensity)
     for atom, sample in enumerate(samples):
-        total = _assigned(
-            partition.weights[atom], total_density, partition.pseudodensity, sample
-        )
-        core_local = _assigned(
-            core.weights[atom], core.density, core.pseudodensity, sample
-        )
+        total = _assigned(partition.weights[atom], total_density, total_inverse, sample)
+        core_local = _assigned(core.weights[atom], core.density, core_inverse, sample)
         electron_weight = (
             (total - core_local) * partition.normalization * grid.pixel_volume
         )
         displacement = sample.displacements
         dipoles[atom] = -electron_weight @ displacement
-        tensor = -np.einsum("i,ij,ik->jk", electron_weight, displacement, displacement)
+        tensor = -(displacement.T * electron_weight) @ displacement
         if grid.atomic_corrections is not None:
             correction = grid.atomic_corrections[atom]
             dipoles[atom] += correction[2:5]
@@ -372,10 +369,9 @@ def _radial_moments(
     pixel_volume: float,
 ) -> np.ndarray:
     moments = np.zeros((len(samples), 3))
+    inverse = reciprocal(partition.pseudodensity)
     for atom, sample in enumerate(samples):
-        assigned = _assigned(
-            partition.weights[atom], density, partition.pseudodensity, sample
-        )
+        assigned = _assigned(partition.weights[atom], density, inverse, sample)
         radii = np.linalg.norm(sample.displacements, axis=1)
         for column, power in enumerate((2, 3, 4)):
             moments[atom, column] = np.sum(assigned * radii**power) * pixel_volume

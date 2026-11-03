@@ -40,7 +40,8 @@ class _LocalSpin:
     shells: IntArray
     fractions: FloatArray
     density: FloatArray
-    proportional_spin: FloatArray
+    total_density: FloatArray
+    spin: FloatArray
     proportional_theta: FloatArray
     shell_counts: IntArray
 
@@ -104,14 +105,35 @@ def _lookup_tables() -> tuple[FloatArray, FloatArray, FloatArray]:
     return fractions, xi, inverse
 
 
+def _interpolate(values: FloatArray, table: FloatArray) -> FloatArray:
+    # np.interp on the uniform lookup abscissa, without its binary search.
+    position = np.clip(values, 0.0, 1.0) * _LOOKUP_POINTS
+    index = position.astype(np.intp)
+    position -= index
+    result = np.append(np.diff(table), 0.0).take(index)
+    result *= position
+    result += table.take(index)
+    return result
+
+
+def _magnitude(spin: FloatArray) -> FloatArray:
+    return np.abs(spin[0]) if len(spin) == 1 else np.linalg.norm(spin, axis=0)
+
+
 def _theta(density: FloatArray, spin: FloatArray) -> FloatArray:
-    magnitude = np.linalg.norm(spin, axis=1)
+    magnitude = _magnitude(spin)
     active = (magnitude > _ZERO) & (density > _ZERO)
     result = np.zeros_like(spin)
-    fractions, lookup, _ = _lookup_tables()
-    xi = np.interp(magnitude[active] / density[active], fractions, lookup)
-    result[active] = spin[active] * (xi / (2.0 * magnitude[active]))[:, np.newaxis]
+    xi = _interpolate(magnitude[active] / density[active], _lookup_tables()[1])
+    result[:, active] = spin[:, active] * (xi / (2.0 * magnitude[active]))
     return result
+
+
+def _scatter(
+    ufunc: np.ufunc, target: FloatArray, points: IntArray, values: FloatArray
+) -> None:
+    for row, value in zip(target, values, strict=True):
+        ufunc.at(row, points, value)
 
 
 def _local_spin_data(
@@ -128,17 +150,19 @@ def _local_spin_data(
         )
         points = sample.indices[active]
         shells = sample.shells[active]
+        total_density = density[points]
+        local_spin = np.ascontiguousarray(spin[points].T)
         fraction = weights[atom, shells] / pseudodensity[points]
-        assigned_density = fraction * density[points]
-        proportional = fraction[:, np.newaxis] * spin[points]
+        assigned_density = fraction * total_density
         local.append(
             _LocalSpin(
                 points,
                 shells,
                 fraction,
                 assigned_density,
-                proportional,
-                _theta(assigned_density, proportional),
+                total_density,
+                local_spin,
+                _theta(assigned_density, fraction * local_spin),
                 np.bincount(shells, minlength=NSHELLS),
             )
         )
@@ -204,51 +228,52 @@ def partition_spin(  # noqa: PLR0912, PLR0913, PLR0915
             raise ValueError(msg)
         correction = supplied
     local_data = _local_spin_data(density, spin, weights, pseudodensity, samples)
-    radial_spin = np.zeros((natoms, 100, components))
+    radial_spin = np.zeros((natoms, NSHELLS, components))
+    shell_theta = np.zeros((natoms, components, NSHELLS))
     populations = np.zeros((natoms, components))
-    ypsilon = np.zeros_like(spin)
-    omega = np.zeros_like(spin)
-    trial = np.zeros_like(spin)
-    fractions, _, inverse_lookup = _lookup_tables()
+    # Grid arrays are component-major so each component scatters contiguously.
+    # Chargemol's omega is subtracted from ypsilon as soon as it is known.
+    grid_shape = (components, len(density))
+    ypsilon, trial, new_ypsilon, new_trial = (np.zeros(grid_shape) for _ in range(4))
+    inverse_lookup = _lookup_tables()[2]
     converged = False
     max_change = 0.0
     for iteration in range(1, max_iterations + 1):
         sums = np.zeros_like(radial_spin)
-        new_ypsilon = np.zeros_like(spin)
-        new_trial = np.zeros_like(spin)
+        new_ypsilon.fill(0)
+        new_trial.fill(0)
         for atom, local in enumerate(local_data):
             if iteration == 1:
-                assigned_spin = local.proportional_spin
+                assigned_spin = local.fractions * local.spin
                 lagrange = local.proportional_theta
             else:
-                theta = _theta(
-                    spherical_average[atom, local.shells],
-                    radial_spin[atom, local.shells],
-                )
+                theta = shell_theta[atom].take(local.shells, axis=1)
                 lagrange = (
-                    ypsilon[local.points]
-                    - omega[local.points]
+                    ypsilon.take(local.points, axis=1)
                     + np.pi
-                    * (spin[local.points] - trial[local.points])
-                    / density[local.points, None]
+                    * (local.spin - trial.take(local.points, axis=1))
+                    / local.total_density
                     + 0.5 * (theta + local.proportional_theta)
                 )
-                magnitude = np.maximum(np.linalg.norm(lagrange, axis=1), _ZERO**2)
-                inverse = np.interp(magnitude / np.pi, fractions, inverse_lookup)
+                magnitude = np.maximum(_magnitude(lagrange), _ZERO**2)
+                inverse = _interpolate(magnitude / np.pi, inverse_lookup)
                 assigned_magnitude = local.density * inverse
                 if not scalar:
                     assigned_magnitude = np.maximum(assigned_magnitude, _ZERO**2)
-                assigned_spin = lagrange * (assigned_magnitude / magnitude)[:, None]
-            np.add.at(sums[atom], local.shells, assigned_spin)
-            np.add.at(new_ypsilon, local.points, lagrange * local.fractions[:, None])
-            np.add.at(new_trial, local.points, assigned_spin)
+                assigned_spin = lagrange * (assigned_magnitude / magnitude)
+            for component, values in enumerate(assigned_spin):
+                sums[atom, :, component] = np.bincount(
+                    local.shells, values, minlength=NSHELLS
+                )
+            _scatter(np.add, new_ypsilon, local.points, lagrange * local.fractions)
+            _scatter(np.add, new_trial, local.points, assigned_spin)
             np.divide(
                 sums[atom],
                 local.shell_counts[:, None],
                 out=radial_spin[atom],
                 where=local.shell_counts[:, None] > 0,
             )
-        ypsilon, trial = new_ypsilon, new_trial
+        ypsilon, trial, new_ypsilon, new_trial = new_ypsilon, new_trial, ypsilon, trial
         new_populations = sums.sum(axis=1) * voxel_volume + correction
         max_change = float(np.max(np.abs(new_populations - populations), initial=0))
         populations = new_populations
@@ -262,20 +287,20 @@ def partition_spin(  # noqa: PLR0912, PLR0913, PLR0915
         ):
             converged = True
             break
-        omega.fill(0)
         for atom, local in enumerate(local_data):
-            theta = _theta(
-                spherical_average[atom, local.shells], radial_spin[atom, local.shells]
-            )
-            np.add.at(
-                omega,
+            # Theta depends only on the shell, and is reused by the next Lagrange step.
+            shell_theta[atom] = _theta(spherical_average[atom], radial_spin[atom].T)
+            theta = shell_theta[atom].take(local.shells, axis=1)
+            _scatter(
+                np.subtract,
+                ypsilon,
                 local.points,
-                0.5 * (theta + local.proportional_theta) * local.fractions[:, None],
+                0.5 * (theta + local.proportional_theta) * local.fractions,
             )
     return SpinResult(
         populations[:, 0] if scalar else populations,
         radial_spin[..., 0] if scalar else radial_spin,
-        trial[:, 0] if scalar else trial,
+        trial[0] if scalar else np.ascontiguousarray(trial.T),
         iteration,
         converged,
         max_change,

@@ -28,6 +28,7 @@ _CUBE_AXIS_FIELDS = 4
 _CUBE_ATOM_FIELDS = 5
 _XSF_ATOM_FIELDS = 4
 _DIMENSIONS = 3
+_SLICE_LINES = 4096
 
 
 def _bound_spin_density(grid: DensityGrid, spin: FloatArray) -> FloatArray:
@@ -86,12 +87,21 @@ class _Text:
         values = np.empty(count)
         filled = 0
         while filled < count:
-            chunk = _floats(self.line().split(), self.path)
-            if filled + len(chunk) > count:
+            remaining = count - filled
+            lines = max(1, min(_SLICE_LINES, remaining // len(self.line().split())))
+            start = self.index - 1
+            fields = _fields(self.lines[start : start + lines])
+            # Halve slices that run past the block so overflow is caught per line.
+            while len(fields) > remaining and lines > 1:
+                lines //= 2
+                fields = _fields(self.lines[start : start + lines])
+            chunk = _parse(fields, self.path)
+            if len(chunk) > remaining:
                 msg = f"{self.path}: too many values in the density block"
                 raise ValueError(msg)
             values[filled : filled + len(chunk)] = chunk
             filled += len(chunk)
+            self.index = min(start + lines, len(self.lines))
         return values
 
 
@@ -105,11 +115,17 @@ class _Grid:
     spin_density: FloatArray | None = None
 
 
+def _fields(lines: list[str]) -> list[str]:
+    return " ".join(lines).replace("D", "E").replace("d", "e").split()
+
+
 def _floats(fields: list[str], path: Path) -> FloatArray:
+    return _parse(_fields(fields), path)
+
+
+def _parse(fields: list[str], path: Path) -> FloatArray:
     try:
-        values = np.array(
-            [float(v.replace("D", "E").replace("d", "e")) for v in fields]
-        )
+        values = np.fromiter(map(float, fields), np.float64, count=len(fields))
     except ValueError as error:
         msg = f"{path}: invalid numeric value: {error}"
         raise ValueError(msg) from error

@@ -17,7 +17,7 @@ def _sample(indices: list[int], shells: list[int]) -> AtomicSample:
         indices=np.array(indices),
         shells=np.array(shells),
         displacements=np.zeros((len(indices), 3)),
-        translations=np.zeros((len(indices), 3), dtype=np.int64),
+        coordinates=np.zeros((len(indices), 3), dtype=np.int32),
     )
 
 

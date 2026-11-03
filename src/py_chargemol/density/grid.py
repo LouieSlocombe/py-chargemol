@@ -163,14 +163,16 @@ class AtomicSample:
     """Grid points within the radial cutoff of one reference-cell nucleus.
 
     Repeated indices represent different periodic images of the same grid
-    point. ``translations`` gives the corresponding atom image relative to
-    the reference cell, when the grid point is folded back into that cell.
+    point. ``coordinates`` are the unwrapped int32 grid coordinates, in
+    lexicographic order; ``-(coordinates // shape)`` gives the corresponding
+    atom image relative to the reference cell, when the grid point is folded
+    back into that cell.
     """
 
     indices: np.ndarray
     shells: np.ndarray
     displacements: np.ndarray
-    translations: np.ndarray
+    coordinates: np.ndarray
 
 
 def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
@@ -189,24 +191,35 @@ def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
                 lower[axis] = max(lower[axis], 0)
                 upper[axis] = min(upper[axis], shape[axis] - 1)
         axes = [np.arange(lo, hi + 1) for lo, hi in zip(lower, upper, strict=True)]
-        coordinates = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(
-            -1, 3
+        # Broadcast each Cartesian component over the parallelepiped of grid points.
+        x, y, z = (
+            np.multiply.outer(step, axis)
+            for axis, step in zip(axes, grid.steps, strict=True)
         )
-        displacement = coordinates @ grid.steps + grid.origin - position
+        components = (
+            x[:, :, None, None]
+            + y[:, None, :, None]
+            + z[:, None, None, :]
+            + (grid.origin - position)[:, None, None, None]
+        )
         shells = (
-            np.ceil(SCALE * np.linalg.norm(displacement, axis=1) + ZERO).astype(
+            np.ceil(SCALE * np.sqrt(np.sum(components**2, axis=0)) + ZERO).astype(
                 np.int64
             )
             - 1
         )
         keep = shells < NSHELLS
-        coordinates = coordinates[keep]
+        i, j, k = np.nonzero(keep)
+        wrapped = [axis % size for axis, size in zip(axes, shape, strict=True)]
         result.append(
             AtomicSample(
-                indices=np.ravel_multi_index((coordinates % shape).T, tuple(shape)),
+                indices=(wrapped[0][i] * shape[1] + wrapped[1][j]) * shape[2]
+                + wrapped[2][k],
                 shells=shells[keep],
-                displacements=displacement[keep],
-                translations=-(coordinates // shape),
+                displacements=np.ascontiguousarray(components[:, keep].T),
+                coordinates=np.column_stack(
+                    (axes[0][i], axes[1][j], axes[2][k])
+                ).astype(np.int32),
             )
         )
     return tuple(result)
@@ -218,9 +231,21 @@ def sum_radial_weights(
     """Accumulate radial atomic weights, including repeated periodic images."""
     result = np.zeros(size)
     for radial, sample in zip(weights, samples, strict=True):
-        result += np.bincount(
-            sample.indices, weights=radial[sample.shells], minlength=size
-        )
+        np.add.at(result, sample.indices, radial[sample.shells])
+    return result
+
+
+def reciprocal(
+    values: npt.NDArray[np.float64], threshold: float = ZERO
+) -> npt.NDArray[np.float64]:
+    """Return ``1 / values`` where values exceed ``threshold``, and zero elsewhere.
+
+    Multiplying sampled weights by this grid replaces a masked division per
+    sample point, which dominates the cost of each partition iteration.
+    """
+    result: npt.NDArray[np.float64] = np.divide(
+        1.0, values, out=np.zeros_like(values), where=values > threshold
+    )
     return result
 
 

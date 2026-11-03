@@ -12,6 +12,7 @@ from py_chargemol.density.partition import (
     PartitionResult,
     _normalize_population,
     _shell_statistics,
+    local_densities,
     pseudodensity,
 )
 from py_chargemol.density.references import reference_densities
@@ -27,33 +28,37 @@ def _reference_averages(  # noqa: PLR0913, PLR0917 -- Physical radial averages.
     references: FloatArray,
     conditioned: FloatArray,
     samples: Sequence[AtomicSample],
-    density: FloatArray,
+    densities: Sequence[FloatArray],
     total: FloatArray,
     points: FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
-    reference_total = pseudodensity(references, samples, density.size)
-    conditioned_total = pseudodensity(conditioned, samples, density.size)
+    size = len(total)
+    reference_total = pseudodensity(references, samples, size)
+    conditioned_total = pseudodensity(conditioned, samples, size)
     average_ratio = np.ones_like(references)
     tau = np.ones_like(references)
-    for atom, sample in enumerate(samples):
+    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+        # Points outside the partition contribute zeros rather than being removed.
         valid = total[sample.indices] > _ZERO
-        indices, shells = sample.indices[valid], sample.shells[valid]
+        shells = sample.shells
+        local_reference = reference_total[sample.indices]
         ratio = np.divide(
-            density[indices],
-            reference_total[indices],
-            out=np.ones(len(indices)),
-            where=reference_total[indices] > _ZERO**2,
+            density,
+            local_reference,
+            out=np.ones(len(shells)),
+            where=local_reference > _ZERO**2,
         )
-        ratio_sum = np.bincount(shells, weights=ratio, minlength=NSHELLS)
+        ratio_sum = np.bincount(shells, weights=ratio * valid, minlength=NSHELLS)
         np.divide(
             ratio_sum, points[atom], out=average_ratio[atom], where=points[atom] > 0
         )
-        roots = np.sqrt(conditioned_total[indices])
+        local_conditioned = conditioned_total[sample.indices]
+        roots = np.sqrt(local_conditioned, out=np.zeros(len(shells)), where=valid)
         numerator_values = np.divide(
             conditioned[atom, shells],
             roots,
-            out=np.zeros(len(indices)),
-            where=conditioned_total[indices] > _ZERO**2,
+            out=np.zeros(len(shells)),
+            where=valid & (local_conditioned > _ZERO**2),
         )
         numerator = np.bincount(shells, weights=numerator_values, minlength=NSHELLS)
         denominator = np.bincount(shells, weights=roots, minlength=NSHELLS)
@@ -112,13 +117,14 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     renormalization = np.ones(len(samples))
     charge_changes = [1.0] * 4
     density_changes = [0.1] * 4
+    densities = local_densities(density, samples)
     for iteration in range(1, 2001):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, _, weighted_density = _shell_statistics(
-            weights, samples, density, total
+            weights, samples, densities, total
         )
         ratios, tau = _reference_averages(
-            references, conditioned, samples, density, total, points
+            references, conditioned, samples, densities, total, points
         )
         old_spherical = spherical
         spherical = np.divide(

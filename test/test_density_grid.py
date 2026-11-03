@@ -7,6 +7,7 @@ import pytest
 
 from py_chargemol.density.grid import (
     CUTOFF,
+    AtomicSample,
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
@@ -121,11 +122,15 @@ def test_grid_accepts_explicit_core_spin_and_analytic_corrections(
     np.testing.assert_array_equal(grid.occupancy_correction, [0.1])
 
 
+def _translations(sample: AtomicSample, grid: DensityGrid) -> np.ndarray:
+    return np.asarray(-(sample.coordinates // np.asarray(grid.density.shape)))
+
+
 def test_nonperiodic_sample_contains_each_grid_point_once() -> None:
     grid = _grid()
     (sample,) = atomic_samples(grid)
     np.testing.assert_array_equal(np.sort(sample.indices), np.arange(grid.density.size))
-    np.testing.assert_array_equal(sample.translations, np.zeros((27, 3)))
+    np.testing.assert_array_equal(_translations(sample, grid), np.zeros((27, 3)))
     assert sample.shells.min() == 0
     assert np.linalg.norm(sample.displacements, axis=1).max() < CUTOFF
 
@@ -139,12 +144,16 @@ def test_periodic_sample_tracks_distinct_images_of_repeated_points() -> None:
     assert len(np.unique(sample.indices)) == grid.density.size
     folded = np.column_stack(np.unravel_index(sample.indices, grid.density.shape))
     points = folded @ grid.steps + grid.origin
-    images = grid.positions[0] + sample.translations @ grid.lattice_vectors
+    translations = _translations(sample, grid)
+    images = grid.positions[0] + translations @ grid.lattice_vectors
     np.testing.assert_allclose(sample.displacements, points - images)
-    np.testing.assert_array_equal(sample.translations[:, 1:], 0)
-    assert len(
-        set(zip(sample.indices, map(tuple, sample.translations), strict=True))
-    ) == len(sample.indices)
+    np.testing.assert_array_equal(translations[:, 1:], 0)
+    assert len(set(zip(sample.indices, map(tuple, translations), strict=True))) == len(
+        sample.indices
+    )
+    # Bond integration bounds rely on this lexicographic order.
+    order = np.lexsort(sample.coordinates.T[::-1])
+    np.testing.assert_array_equal(order, np.arange(len(order)))
 
 
 def test_skew_grid_samples_are_invariant_under_cartesian_rotation() -> None:
@@ -163,7 +172,7 @@ def test_skew_grid_samples_are_invariant_under_cartesian_rotation() -> None:
     )
     np.testing.assert_array_equal(first.indices, second.indices)
     np.testing.assert_array_equal(first.shells, second.shells)
-    np.testing.assert_array_equal(first.translations, second.translations)
+    np.testing.assert_array_equal(first.coordinates, second.coordinates)
     np.testing.assert_allclose(first.displacements @ rotation, second.displacements)
 
 

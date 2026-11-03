@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+Faster density analysis and input reading. Results change only by
+floating-point rounding (below 1e-12 on the regression fixtures).
+
+- Build WFX density grids about 3× faster by evaluating each pair of primitive
+  groups with matrix products instead of a Python loop over primitive pairs.
+- Parse density blocks in cube, VASP, and XSF files about 5× faster, with the
+  same values and error messages.
+- Speed up DDEC6, DDEC3, core, spin, multipole, bond-order, and CM5 calculations
+  by about 1.5–2×: shared sample gathers, masked instead of compacted arrays,
+  reciprocal pseudodensities, shell-level spin angular functions, and
+  vectorized pair screening.
+- Reduce peak memory by about a quarter. Atomic integration samples store int32
+  grid `coordinates`, which bond integration reuses, in place of the unused
+  image `translations`.
+
 ## 1.0.0
 
 First release. py-chargemol implements the density analyses of Chargemol 3.5
