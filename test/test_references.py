@@ -104,30 +104,32 @@ def test_radial_constraints_match_fortran(case: dict[str, Any]) -> None:
 
 
 def test_impossible_radial_constraint_reports_failure() -> None:
-    with pytest.raises(ValueError, match="could not bracket"):
+    with pytest.raises(ValueError, match="constraint has no solution"):
         tail_decay(np.ones(2), np.array([0.0, 1.0]), np.zeros(2), np.zeros(2))
 
 
 def test_subtolerance_radial_tails_remain_finite() -> None:
     density = np.array(
         [
-            2.5551550226868336e-12,
-            4.550323233703344e-11,
-            5.558677698437231e-11,
-            6.101118551839302e-12,
+            2.880031336224203e-13,
+            9.248083165302794e-13,
+            6.080061308927388e-11,
+            5.748749694277091e-11,
         ]
     )
     exponents = np.array(
         [
-            0.12867990424219689,
-            0.8058866139918319,
-            0.07652021054241964,
-            0.2441784787477964,
+            23.60219535426599,
+            2.8170313778006126,
+            3.057576008418303,
+            0.07635402578532578,
         ]
     )
     result = tail_decay(density, np.ones(4), exponents, np.zeros(4))
     assert np.all(np.isfinite(result))
     assert np.all(result >= 0)
+    # The restored population is within tolerance, but too small to renormalize.
+    assert result.sum() < 1e-10
     assert abs(result.sum() - density.sum()) < 1e-10
 
 

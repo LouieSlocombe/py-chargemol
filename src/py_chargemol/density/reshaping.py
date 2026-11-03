@@ -1,7 +1,8 @@
 """Population-preserving radial constraints for DDEC6 weighting functions.
 
 These apply the constraints in Chargemol's ``module_reshaping_functions``.
-Bisection solves the scalar normalization constraint without requiring SciPy.
+The scalar normalization constraint is piecewise linear, so Newton steps solve
+it exactly in a few evaluations, where Chargemol bisects.
 """
 
 import numpy as np
@@ -10,16 +11,25 @@ import numpy.typing as npt
 type FloatArray = npt.NDArray[np.float64]
 
 _TOLERANCE = 1e-10
+_NEWTON_ITERATIONS = 100
 
 
 def _limit_density(
-    density: FloatArray, weights: FloatArray, decay: FloatArray
-) -> FloatArray:
+    density: FloatArray, direction: FloatArray, weights: FloatArray, decay: FloatArray
+) -> tuple[FloatArray, FloatArray]:
+    """Limit each shell by its predecessor, with the derivative along ``direction``.
+
+    A limited shell inherits its predecessor's derivative times the decay factor.
+    """
     result = np.maximum(density, 0.0)
+    slope = direction.copy()
     for shell in range(1, len(result)):
         if weights[shell] > 0 and result[shell - 1] > 0:
-            result[shell] = min(result[shell], result[shell - 1] * decay[shell])
-    return result
+            limit = result[shell - 1] * decay[shell]
+            if limit < result[shell]:
+                result[shell] = limit
+                slope[shell] = slope[shell - 1] * decay[shell]
+    return result, slope
 
 
 def _restore_population(
@@ -30,34 +40,28 @@ def _restore_population(
     weighted_points = float(root_density @ weights)
     if min(population, weighted_points) < _TOLERANCE:
         return density.copy(), False
-    result = _limit_density(density, weights, decay)
+    result, slope = _limit_density(density, root_density, weights, decay)
     error = population - float(result @ weights)
     if error < _TOLERANCE:
         return result, False
 
-    lower = 0.0
-    upper = error / weighted_points
-    for _ in range(50):
-        result = _limit_density(density + upper * root_density, weights, decay)
-        error = population - float(result @ weights)
-        if error <= 0:
-            break
-        lower = upper
-        upper = 2 * lower + error / weighted_points
-    else:
-        msg = "could not bracket the radial-density population constraint"
-        raise ValueError(msg)
-
-    for _ in range(80):
-        coefficient = (lower + upper) / 2
-        result = _limit_density(density + coefficient * root_density, weights, decay)
+    # Each limited shell is a minimum of linear functions of the coefficient, so
+    # the population error is convex, decreasing and piecewise linear. Newton
+    # steps from zero rise to the root without overshooting it, and land on it
+    # exactly from its own linear piece.
+    coefficient = 0.0
+    for _ in range(_NEWTON_ITERATIONS):
+        gradient = float(slope @ weights)
+        if gradient <= 0:
+            msg = "the radial-density population constraint has no solution"
+            raise ValueError(msg)
+        coefficient += error / gradient
+        result, slope = _limit_density(
+            density + coefficient * root_density, root_density, weights, decay
+        )
         error = population - float(result @ weights)
         if abs(error) < _TOLERANCE:
             return result, True
-        if error > 0:
-            lower = coefficient
-        else:
-            upper = coefficient
     msg = "radial-density population constraint did not converge"
     raise ValueError(msg)
 
