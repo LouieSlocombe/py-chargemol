@@ -54,23 +54,26 @@ def partition_core(
     if not np.any(core_electrons):
         return CoreResult(np.zeros_like(density), populations, weights, density * 0)
     pseudo = sum_radial_weights(weights, samples, len(density))
-    densities = [density[sample.indices] for sample in samples]
-    local, counts, averages = _local_averages(densities, weights, pseudo, samples)
+    totals, counts, averages = _local_averages(density, weights, pseudo, samples)
     for iteration in range(200):
-        updated = np.array([np.sum(value) for value in local]) * pixel_volume
+        updated = totals * pixel_volume
         change = np.max(np.abs(updated - populations))
         populations = updated
         if iteration + 1 >= _MINIMUM_CORE_ITERATIONS and change < _CHARGE_TOLERANCE:
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
-    populations = np.array([np.sum(value) for value in local]) * pixel_volume
+        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
+    populations = totals * pixel_volume
 
     for _ in range(40):
         correction = core_electrons - populations
         adjusted = np.zeros_like(density)
-        for sample, values, delta in zip(samples, local, correction, strict=True):
+        # Each atom's assigned core density is made again from the density,
+        # weights and pseudodensity the last averages used, one atom at a time.
+        inverse = reciprocal(pseudo)
+        for atom, (sample, delta) in enumerate(zip(samples, correction, strict=True)):
+            values = _assigned(density, weights[atom], inverse, sample)
             sum_cubes = np.sum(values**3)
             largest = np.max(values, initial=0.0)
             factor = 0.0
@@ -80,14 +83,13 @@ def partition_core(
             corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
             np.add.at(adjusted, sample.indices, corrected)
         density = adjusted
-        densities = [density[sample.indices] for sample in samples]
-        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
-        populations = np.array([np.sum(value) for value in local]) * pixel_volume
+        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
+        populations = totals * pixel_volume
         if np.max(np.abs(core_electrons - populations)) < _CHARGE_TOLERANCE:
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        local, counts, averages = _local_averages(densities, weights, pseudo, samples)
+        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
     if np.max(np.abs(core_electrons - populations)) >= _CHARGE_TOLERANCE:
         msg = (
             "core density could not be corrected to the requested electron populations"
@@ -120,28 +122,41 @@ def dominant_occupancy_correction(
     )
 
 
+def _assigned(
+    density: np.ndarray, radial: np.ndarray, inverse: np.ndarray, sample: AtomicSample
+) -> np.ndarray:
+    """One atom's share of the density at its points, given the reciprocal."""
+    return np.asarray(
+        radial[sample.shells] * density[sample.indices] * inverse[sample.indices]
+    )
+
+
 def _local_averages(
-    densities: Sequence[np.ndarray],
+    density: np.ndarray,
     weights: np.ndarray,
     pseudo: np.ndarray,
     samples: Sequence[AtomicSample],
-) -> tuple[list[np.ndarray], np.ndarray, np.ndarray]:
-    local = []
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Each atom's assigned total, and its shell counts and averages.
+
+    Works one atom at a time, so no array per sample point outlives its atom.
+    """
+    totals = np.zeros(len(samples))
     counts = np.zeros_like(weights)
     averages = np.zeros_like(weights)
     inverse = reciprocal(pseudo)
-    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+    for atom, sample in enumerate(samples):
         local_inverse = inverse[sample.indices]
-        values = weights[atom][sample.shells] * density * local_inverse
-        local.append(values)
-        counts[atom] = np.bincount(
-            sample.shells, weights=local_inverse > 0, minlength=NSHELLS
-        )
-        sums = np.bincount(sample.shells, weights=values, minlength=NSHELLS)
+        # Widened once: the stored uint8 shells would be cast at every use.
+        shells = sample.shells.astype(np.intp)
+        values = weights[atom][shells] * density[sample.indices] * local_inverse
+        totals[atom] = np.sum(values)
+        counts[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        sums = np.bincount(shells, weights=values, minlength=NSHELLS)
         averages[atom] = np.divide(
             sums, counts[atom], out=np.zeros(NSHELLS), where=counts[atom] > 0
         )
-    return local, counts, averages
+    return totals, counts, averages
 
 
 def _decaying_weights(averages: np.ndarray, counts: np.ndarray) -> np.ndarray:

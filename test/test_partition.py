@@ -100,8 +100,9 @@ def _lithium_hydride_samples(single_point: bool = False) -> list[AtomicSample]:
         AtomicSample(
             indices=np.arange(len(row)),
             shells=np.array(row),
-            displacements=np.zeros((len(row), 3)),
             coordinates=np.zeros((len(row), 3), dtype=np.int32),
+            steps=np.eye(3),
+            offset=np.zeros(3),
         )
         for row in shells
     ]

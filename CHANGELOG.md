@@ -37,6 +37,28 @@ on the regression fixtures, mostly by floating-point rounding.
 - Reduce peak memory by about a quarter. Atomic integration samples store int32
   grid `coordinates`, which bond integration reuses, in place of the unused
   image `translations`.
+- Add `compute_spin=False` to `compute_ddec6`, `compute_ddec3` and
+  `compute_ddec`, which skips the spin partition and spin-gradient diagnostics
+  of a spin-polarized grid. The spin partition holds several arrays per sample
+  point and sets the peak memory of a charge-only analysis: skipping it lowers
+  the peak of a VASP α-quartz cell at its own grid from 4.3 to 3.0 GB. Charges
+  and multipoles are unchanged. Bond orders of a spin-polarized density need
+  the spin partition, so `compute_spin=False` requires `compute_bos=False`.
+- Store atomic integration samples in 17 bytes per point instead of 52: int32
+  flat indices (int64 only for grids beyond 2**31 points), uint8 shells and
+  the int32 grid coordinates. Cartesian displacements are derived from the
+  coordinates when read, in the order they were stored in, and bond
+  integration derives each atom's once for all its pairs. Results are
+  bit-identical. On the α-quartz cell the peak falls from 4.3 to 2.7 GB, or
+  from 3.0 to 1.8 GB without the spin partition; the core and DDEC6
+  partitions take 5–10 % longer, bond orders about 4 %.
+- Partition one atom at a time. The core, DDEC6 and DDEC3 partitions no longer
+  keep every atom's gathered density, nor the core partition every atom's
+  assigned density, at once: 16 bytes per sample point in the core partition
+  and 8 in the others. Results are bit-identical. The α-quartz cell's
+  charge-only peak falls from 1.8 to 1.4 GB, now set by building the samples,
+  for a core partition about a quarter slower and DDEC6 and DDEC3 partitions
+  about 15 % slower.
 - Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is

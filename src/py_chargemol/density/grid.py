@@ -22,12 +22,12 @@ class RadialSample(Protocol):
     """Grid indices and radial shells shared by all density partitions."""
 
     @property
-    def indices(self) -> npt.NDArray[np.int64]:
+    def indices(self) -> npt.NDArray[np.integer]:
         """Flat grid indices, including repeated periodic images."""
         ...
 
     @property
-    def shells(self) -> npt.NDArray[np.int64]:
+    def shells(self) -> npt.NDArray[np.integer]:
         """Zero-based radial shell of each sampled point."""
         ...
 
@@ -167,12 +167,46 @@ class AtomicSample:
     lexicographic order; ``-(coordinates // shape)`` gives the corresponding
     atom image relative to the reference cell, when the grid point is folded
     back into that cell.
+
+    A sample holds millions of points per atom on a fine grid, so it stores
+    each point in 17 bytes: an int32 flat index (int64 only for grids beyond
+    2**31 points), a uint8 shell and the int32 coordinates. Cartesian
+    ``displacements`` are derived from the coordinates, the grid ``steps`` and
+    the nucleus ``offset`` when read, rather than stored.
     """
 
     indices: np.ndarray
     shells: np.ndarray
-    displacements: np.ndarray
     coordinates: np.ndarray
+    steps: np.ndarray
+    offset: np.ndarray
+
+    @property
+    def displacements(self) -> npt.NDArray[np.float64]:
+        """Unwrapped Cartesian displacement of every point from the nucleus."""
+        return self.cartesian(self.coordinates)
+
+    def cartesian(self, coordinates: np.ndarray) -> npt.NDArray[np.float64]:
+        """Cartesian displacement from the nucleus of unwrapped grid coordinates.
+
+        Sums the axes in the order ``atomic_samples`` measured the shells in,
+        so the displacements are the bits it would have stored. Each Cartesian
+        component is built along contiguous rows, then laid out as the stored
+        ``(n, 3)`` rows were, so that reductions over them sum in the same order.
+        """
+        axes = coordinates.T.astype(np.float64)
+        result = np.empty((_DIMENSIONS, len(coordinates)))
+        for component, row in enumerate(result):
+            np.multiply(axes[0], self.steps[0, component], out=row)
+            np.add(row, axes[1] * self.steps[1, component], out=row)
+            np.add(row, axes[2] * self.steps[2, component], out=row)
+            np.add(row, self.offset[component], out=row)
+        return np.ascontiguousarray(result.T)
+
+
+def sample_index_type(size: int) -> type[np.signedinteger]:
+    """The narrowest of int32 and int64 that indexes a grid of ``size`` points."""
+    return np.int32 if size <= np.iinfo(np.int32).max else np.int64
 
 
 def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
@@ -180,6 +214,7 @@ def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
     inverse = np.linalg.inv(grid.steps)
     extent = integration_extent(grid.steps)
     shape = np.asarray(grid.density.shape)
+    index_type = sample_index_type(grid.density.size)
     result = []
     for position in grid.positions:
         center = (position - grid.origin) @ inverse
@@ -213,13 +248,16 @@ def atomic_samples(grid: DensityGrid) -> tuple[AtomicSample, ...]:
         wrapped = [axis % size for axis, size in zip(axes, shape, strict=True)]
         result.append(
             AtomicSample(
-                indices=(wrapped[0][i] * shape[1] + wrapped[1][j]) * shape[2]
-                + wrapped[2][k],
-                shells=shells[keep],
-                displacements=np.ascontiguousarray(components[:, keep].T),
+                indices=(
+                    (wrapped[0][i] * shape[1] + wrapped[1][j]) * shape[2]
+                    + wrapped[2][k]
+                ).astype(index_type),
+                shells=shells[keep].astype(np.uint8),
                 coordinates=np.column_stack(
                     (axes[0][i], axes[1][j], axes[2][k])
                 ).astype(np.int32),
+                steps=grid.steps.copy(),
+                offset=grid.origin - position,
             )
         )
     return tuple(result)
