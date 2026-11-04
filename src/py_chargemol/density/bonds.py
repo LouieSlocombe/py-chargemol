@@ -254,24 +254,21 @@ def _exchange_vectors(
 
 @lru_cache(maxsize=201)
 def _overlap_estimate_grid(separation: int) -> tuple[IntArray, IntArray, FloatArray]:
-    """Precompute cylindrical quadrature for the original pair screening test."""
-    radial_i: list[int] = []
-    radial_j: list[int] = []
-    measures: list[float] = []
-    for x in range(separation - NSHELLS, NSHELLS + 1):
-        maximum = NSHELLS**2 - max(x**2, (separation - x) ** 2)
-        for height in range(int(np.ceil(np.sqrt(maximum))) + 1):
-            shell_i = int(np.floor(np.hypot(x, height) + 0.5))
-            shell_j = int(np.floor(np.hypot(separation - x, height) + 0.5))
-            if shell_i < NSHELLS and shell_j < NSHELLS:
-                radial_i.append(shell_i)
-                radial_j.append(shell_j)
-                measures.append(4.0 * np.pi * height / SCALE**3)
-    return (
-        np.asarray(radial_i, dtype=np.int64),
-        np.asarray(radial_j, dtype=np.int64),
-        np.asarray(measures, dtype=np.float64),
-    )
+    """Precompute cylindrical quadrature for the original pair screening test.
+
+    Rows run over the axial position and then the height above the axis, the
+    order of the original nested loops, so sums over them keep their order.
+    """
+    axial = np.arange(separation - NSHELLS, NSHELLS + 1)
+    limits = NSHELLS**2 - np.maximum(axial**2, (separation - axial) ** 2)
+    counts = np.ceil(np.sqrt(limits)).astype(np.int64) + 1
+    x = np.repeat(axial, counts)
+    height = np.arange(len(x)) - np.repeat(np.cumsum(counts) - counts, counts)
+    shell_i = np.floor(np.hypot(x, height) + 0.5).astype(np.int64)
+    shell_j = np.floor(np.hypot(separation - x, height) + 0.5).astype(np.int64)
+    keep = (shell_i < NSHELLS) & (shell_j < NSHELLS)
+    measures = 4.0 * np.pi * height[keep] / SCALE**3
+    return shell_i[keep], shell_j[keep], np.asarray(measures, dtype=np.float64)
 
 
 def _significant_pair(  # noqa: PLR0913, PLR0917

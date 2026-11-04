@@ -67,6 +67,10 @@ on the regression fixtures, mostly by floating-point rounding.
   each atom's assigned density when it corrects the density, the averages
   it took after every weight update were never read. Results are
   bit-identical, and the core partition takes 5–15 % less time.
+- Build the cylindrical quadrature of bond-pair screening with array
+  operations instead of nested Python loops, about 80× faster and with
+  the same values. It took up to 3 s of a periodic bond analysis, one
+  table per distinct pair separation.
 
 ## 1.0.0
 

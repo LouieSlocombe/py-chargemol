@@ -10,7 +10,12 @@ import pytest
 
 from py_chargemol.ddec6 import FloatArray, IntArray
 from py_chargemol.density.analysis import compute_ddec6
-from py_chargemol.density.bonds import BondOrderResult, compute_bond_orders
+from py_chargemol.density.bonds import (
+    BondOrderResult,
+    _overlap_estimate_grid,
+    compute_bond_orders,
+)
+from py_chargemol.density.grid import NSHELLS, SCALE
 from py_chargemol.density.spin import _lookup_tables, partition_spin
 from py_chargemol.density.workflow import read_density
 from py_chargemol.units import BOHR_PER_ANGSTROM
@@ -290,6 +295,33 @@ def test_periodic_self_image_pair() -> None:
     np.testing.assert_allclose(result.overlaps.populations, expected, atol=1e-14)
     np.testing.assert_allclose(result.contact_exchanges, expected, atol=1e-14)
     assert result.summed_bond_orders[0] >= result.bond_orders.sum()
+
+
+@pytest.mark.parametrize("separation", [1, 2, 37, 99, 100, 101, 150, 199, 200])
+def test_overlap_estimate_grid_matches_the_original_loops(separation: int) -> None:
+    # The screening quadrature as first written, one point at a time.
+    radial_i: list[int] = []
+    radial_j: list[int] = []
+    measures: list[float] = []
+    for x in range(separation - NSHELLS, NSHELLS + 1):
+        maximum = NSHELLS**2 - max(x**2, (separation - x) ** 2)
+        for height in range(int(np.ceil(np.sqrt(maximum))) + 1):
+            shell_i = int(np.floor(np.hypot(x, height) + 0.5))
+            shell_j = int(np.floor(np.hypot(separation - x, height) + 0.5))
+            if shell_i < NSHELLS and shell_j < NSHELLS:
+                radial_i.append(shell_i)
+                radial_j.append(shell_j)
+                measures.append(4.0 * np.pi * height / SCALE**3)
+    expected = (
+        np.asarray(radial_i, dtype=np.int64),
+        np.asarray(radial_j, dtype=np.int64),
+        np.asarray(measures, dtype=np.float64),
+    )
+    for actual, reference in zip(
+        _overlap_estimate_grid(separation), expected, strict=True
+    ):
+        assert actual.dtype == reference.dtype
+        np.testing.assert_array_equal(actual, reference)
 
 
 def test_spin_lookup_against_original_fortran() -> None:
