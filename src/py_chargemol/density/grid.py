@@ -317,6 +317,32 @@ def sum_radial_weights(
     return result
 
 
+def shell_counts(samples: Sequence[RadialSample]) -> npt.NDArray[np.float64]:
+    """Each atom's number of sampled points in each radial shell, ``(n, 100)``."""
+    counts = np.zeros((len(samples), NSHELLS))
+    for atom, sample in enumerate(samples):
+        counts[atom] = np.bincount(sample.shells, minlength=NSHELLS)
+    return counts
+
+
+def occupied_counts(
+    counts: npt.NDArray[np.float64],
+    shells: npt.NDArray[np.integer],
+    inverse: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+    """One atom's shell counts of the points where its gathered ``inverse`` is set.
+
+    ``counts`` are the atom's ``shell_counts`` and ``inverse`` comes from
+    ``reciprocal``, zero where its values were too small. Few points lack
+    one, so subtracting them gives the counts with less work than counting
+    the others again.
+    """
+    empty = inverse == 0
+    if not empty.any():
+        return counts
+    return counts - np.bincount(shells[empty], minlength=NSHELLS)
+
+
 def reciprocal(
     values: npt.NDArray[np.float64], threshold: float = ZERO
 ) -> npt.NDArray[np.float64]:

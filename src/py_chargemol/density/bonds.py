@@ -25,7 +25,9 @@ from py_chargemol.density.grid import (
     RadialSample,
     integration_extent,
     nearest_grid_points,
+    occupied_counts,
     reciprocal,
+    shell_counts,
 )
 
 _CHARGE_TOLERANCE = 1e-5
@@ -167,12 +169,13 @@ def _shared_domain(
     return np.flatnonzero(active) + start
 
 
-def _spherical_average(
+def _spherical_average(  # noqa: PLR0913, PLR0917
     density: FloatArray,
     weights: FloatArray,
     pseudodensity: FloatArray,
     samples: Sequence[AtomicSampleLike],
     voxel_volume: float,
+    sampled: FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
     averages = np.zeros_like(weights)
     shell_populations = np.zeros_like(weights)
@@ -182,7 +185,7 @@ def _spherical_average(
         shells = sample.shells
         assigned = density[sample.indices] * weights[atom][shells] * local_inverse
         sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
-        counts = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        counts = occupied_counts(sampled[atom], shells, local_inverse)
         np.divide(sums, counts, out=averages[atom], where=counts > 0)
         shell_populations[atom] = sums * voxel_volume
     return averages, shell_populations
@@ -198,8 +201,9 @@ def _correct_density(  # noqa: PLR0913, PLR0917
     near_nucleus_indices: Sequence[IntArray] | None,
 ) -> _DensityCorrection:
     corrected = density.copy()
+    sampled = shell_counts(samples)
     averages, shell_populations = _spherical_average(
-        corrected, weights, pseudodensity, samples, voxel_volume
+        corrected, weights, pseudodensity, samples, voxel_volume, sampled
     )
     residual = populations - shell_populations.sum(axis=1)
     if near_nucleus_indices is None:
@@ -220,7 +224,7 @@ def _correct_density(  # noqa: PLR0913, PLR0917
                 1.0 - 2.0 * factor * local_density[active] ** 2
             )
         averages, shell_populations = _spherical_average(
-            corrected, weights, pseudodensity, samples, voxel_volume
+            corrected, weights, pseudodensity, samples, voxel_volume, sampled
         )
         if np.sum(np.abs(residual)) < _CHARGE_TOLERANCE:
             break

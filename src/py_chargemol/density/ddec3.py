@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from py_chargemol.density.grid import NSHELLS, SCALE
+from py_chargemol.density.grid import NSHELLS, SCALE, shell_counts
 from py_chargemol.density.partition import (
     AtomicSample,
     FloatArray,
@@ -117,10 +117,11 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     renormalization = np.ones(len(samples))
     charge_changes = [1.0] * 4
     density_changes = [0.1] * 4
+    counts = shell_counts(samples)
     for iteration in range(1, 2001):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, _, weighted_density = _shell_statistics(
-            weights, samples, density, total
+            weights, samples, density, total, counts
         )
         ratios, tau = _reference_averages(
             references, conditioned, samples, density, total, points

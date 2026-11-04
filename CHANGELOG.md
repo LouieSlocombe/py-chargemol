@@ -83,6 +83,11 @@ on the regression fixtures, mostly by floating-point rounding.
   once rather than per point. Results are bit-identical. With the faster
   screening above, the bond analysis of the α-quartz cell at 96³ takes
   34 s instead of 67 s.
+- Count each atom's sample points per shell once per partition, and in
+  each iteration subtract only the few points without a pseudodensity,
+  instead of counting the others again. Results are bit-identical; the
+  core partition takes 7–21 % less time and the DDEC6 partition 8–28 %,
+  from NaCl to the α-quartz cell at 96³.
 
 ## 1.0.0
 

@@ -14,7 +14,9 @@ from py_chargemol.density.grid import (
     SCALE,
     ZERO,
     AtomicSample,
+    occupied_counts,
     reciprocal,
+    shell_counts,
     sum_radial_weights,
 )
 
@@ -53,8 +55,11 @@ def partition_core(
     populations = np.zeros(len(samples))
     if not np.any(core_electrons):
         return CoreResult(np.zeros_like(density), populations, weights, density * 0)
+    sampled = shell_counts(samples)
     pseudo = sum_radial_weights(weights, samples, len(density))
-    totals, counts, averages = _local_averages(density, weights, pseudo, samples)
+    totals, counts, averages = _local_averages(
+        density, weights, pseudo, samples, sampled
+    )
     for iteration in range(200):
         updated = totals * pixel_volume
         change = np.max(np.abs(updated - populations))
@@ -63,7 +68,9 @@ def partition_core(
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
+        totals, counts, averages = _local_averages(
+            density, weights, pseudo, samples, sampled
+        )
     populations = totals * pixel_volume
 
     for _ in range(40):
@@ -83,7 +90,9 @@ def partition_core(
             corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
             np.add.at(adjusted, sample.indices, corrected)
         density = adjusted
-        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
+        totals, counts, averages = _local_averages(
+            density, weights, pseudo, samples, sampled
+        )
         populations = totals * pixel_volume
         if np.max(np.abs(core_electrons - populations)) < _CHARGE_TOLERANCE:
             break
@@ -135,10 +144,12 @@ def _local_averages(
     weights: np.ndarray,
     pseudo: np.ndarray,
     samples: Sequence[AtomicSample],
+    sampled: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Each atom's assigned total, and its shell counts and averages.
 
-    Works one atom at a time, so no array per sample point outlives its atom.
+    ``sampled`` holds every atom's ``shell_counts``. Works one atom at a
+    time, so no array per sample point outlives its atom.
     """
     totals = np.zeros(len(samples))
     counts = np.zeros_like(weights)
@@ -150,7 +161,7 @@ def _local_averages(
         shells = sample.shells.astype(np.intp)
         values = weights[atom][shells] * density[sample.indices] * local_inverse
         totals[atom] = np.sum(values)
-        counts[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        counts[atom] = occupied_counts(sampled[atom], shells, local_inverse)
         sums = np.bincount(shells, weights=values, minlength=NSHELLS)
         averages[atom] = np.divide(
             sums, counts[atom], out=np.zeros(NSHELLS), where=counts[atom] > 0

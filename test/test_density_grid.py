@@ -8,11 +8,14 @@ import pytest
 from py_chargemol.density import grid as grid_module
 from py_chargemol.density.grid import (
     CUTOFF,
+    NSHELLS,
     AtomicSample,
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
+    occupied_counts,
     sample_index_type,
+    shell_counts,
 )
 
 
@@ -213,6 +216,27 @@ def test_samples_store_narrow_types_and_derive_their_displacements() -> None:
     rows = sample.displacement_rows()
     assert rows.flags.c_contiguous
     np.testing.assert_array_equal(rows, sample.displacements.T)
+
+
+def test_occupied_counts_match_counting_the_occupied_points() -> None:
+    grid = _grid(
+        density=np.ones((4, 5, 6)),
+        steps=np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]]),
+        periodic=(True, False, True),
+    )
+    samples = atomic_samples(grid)
+    (counts,) = shell_counts(samples)
+    (sample,) = samples
+    shells = sample.shells.astype(np.intp)
+    np.testing.assert_array_equal(counts, np.bincount(shells, minlength=NSHELLS))
+    full = np.ones(len(shells))
+    assert occupied_counts(counts, shells, full) is counts
+    # Every third point without a reciprocal.
+    partial = np.where(np.arange(len(shells)) % 3 == 0, 0.0, 2.0)
+    expected = np.bincount(shells, weights=partial > 0, minlength=NSHELLS)
+    actual = occupied_counts(counts, shells, partial)
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
 
 
 def test_sample_indices_widen_only_for_grids_beyond_int32() -> None:
