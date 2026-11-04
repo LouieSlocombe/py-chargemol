@@ -76,6 +76,13 @@ on the regression fixtures, mostly by floating-point rounding.
   bit-identical, and building them is 3–4.5× faster: 1.2 s instead of
   5.4 s for the α-quartz cell at 96³, whose charge-only peak falls from
   1.43 to 1.36 GB.
+- Integrate bond pairs with fewer passes over their points: bounds checked
+  per column, points gathered once they are known to lie within both
+  atoms' cutoffs, each atom's displacements kept one component per row,
+  and the integrands' denominators and shell-pair dot products computed
+  once rather than per point. Results are bit-identical. With the faster
+  screening above, the bond analysis of the α-quartz cell at 96³ takes
+  34 s instead of 67 s.
 
 ## 1.0.0
 

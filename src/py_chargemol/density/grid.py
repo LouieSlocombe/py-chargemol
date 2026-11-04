@@ -189,6 +189,14 @@ class AtomicSample:
         """Unwrapped Cartesian displacement of every point from the nucleus."""
         return self.cartesian(self.coordinates)
 
+    def displacement_rows(self) -> npt.NDArray[np.float64]:
+        """The ``displacements``, one contiguous row per component: ``(3, n)``.
+
+        Elementwise work on one Cartesian component at a time reads these
+        rows contiguously, without the transposed copy ``displacements`` makes.
+        """
+        return self._components(self.coordinates)
+
     def cartesian(self, coordinates: np.ndarray) -> npt.NDArray[np.float64]:
         """Cartesian displacement from the nucleus of unwrapped grid coordinates.
 
@@ -197,6 +205,9 @@ class AtomicSample:
         component is built along contiguous rows, then laid out as the stored
         ``(n, 3)`` rows were, so that reductions over them sum in the same order.
         """
+        return np.ascontiguousarray(self._components(coordinates).T)
+
+    def _components(self, coordinates: np.ndarray) -> npt.NDArray[np.float64]:
         axes = coordinates.T.astype(np.float64)
         result = np.empty((_DIMENSIONS, len(coordinates)))
         for component, row in enumerate(result):
@@ -204,7 +215,7 @@ class AtomicSample:
             np.add(row, axes[1] * self.steps[1, component], out=row)
             np.add(row, axes[2] * self.steps[2, component], out=row)
             np.add(row, self.offset[component], out=row)
-        return np.ascontiguousarray(result.T)
+        return result
 
 
 def sample_index_type(size: int) -> type[np.signedinteger]:

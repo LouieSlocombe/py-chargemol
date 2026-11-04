@@ -210,6 +210,9 @@ def test_samples_store_narrow_types_and_derive_their_displacements() -> None:
     )
     some = sample.coordinates[::3]
     np.testing.assert_array_equal(sample.cartesian(some), sample.displacements[::3])
+    rows = sample.displacement_rows()
+    assert rows.flags.c_contiguous
+    np.testing.assert_array_equal(rows, sample.displacements.T)
 
 
 def test_sample_indices_widen_only_for_grids_beyond_int32() -> None:
