@@ -78,18 +78,34 @@ class _DensityCorrection:
 class _PairFields:
     """Grid and radial arrays shared by every pair integral.
 
-    ``squared_total`` and ``squared_first`` hold, at each grid point, the
-    squared summed exchange vector and its squared first component: the
-    denominators of the pair integrands, computed once for all pairs.
+    Each pair integrand is a factor of the grid point alone times a function
+    of the point's two shells. ``point_factors`` holds the four point factors
+    on the grid, ``(4, N)``: twice the voxel volume times the density, over
+    the squared summed exchange vector, its squared first component, the
+    squared pseudodensity, and the squared summed exchange vector squared.
+    They are zero where the exchange vector or pseudodensity is negligible.
     """
 
-    density: FloatArray
     weights: FloatArray
-    pseudodensity: FloatArray
     vectors: FloatArray
-    squared_total: FloatArray
-    squared_first: FloatArray
-    voxel_volume: float
+    point_factors: FloatArray
+
+
+def _point_factors(
+    density: FloatArray,
+    pseudodensity: FloatArray,
+    squared_total: FloatArray,
+    squared_first: FloatArray,
+    voxel_volume: float,
+) -> FloatArray:
+    """The ``point_factors`` of ``_PairFields``, computed once for all pairs."""
+    valid = (squared_total > ZERO**2) & (pseudodensity > ZERO)
+    prefactor = 2.0 * voxel_volume * density
+    factors = np.zeros((4, len(density)))
+    denominators = (squared_total, squared_first, pseudodensity**2, squared_total**2)
+    for row, denominator in zip(factors, denominators, strict=True):
+        np.divide(prefactor, denominator, out=row, where=valid)
+    return factors
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -370,45 +386,37 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
     """Integrate one pair over the ``selected`` points of atom i's sample.
 
     ``rows`` holds the displacements of all of atom i's points, one Cartesian
-    component per row. Points are gathered only once they are known to lie
-    within atom j's cutoff.
+    component per row. Each integrand is a point factor times a function of
+    the point's two shells, so the point factors are summed per pair of
+    shells, and those sums are weighted by the shell functions.
     """
     dx, dy, dz = (
         row.take(selected) - offset
         for row, offset in zip(rows, separation, strict=True)
     )
     distance_j = np.sqrt(dx**2 + dy**2 + dz**2)
-    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.int64)
+    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.intp)
     inside = shells_j < NSHELLS
     selected = selected[inside]
-    points = sample.indices.take(selected).astype(np.intp)
-    denominator = fields.squared_total.take(points)
-    local_pseudo = fields.pseudodensity.take(points)
-    valid = (denominator > ZERO**2) & (local_pseudo > ZERO)
-    points = points[valid]
-    shells_i = sample.shells.take(selected[valid]).astype(np.intp)
-    shells_j = shells_j[inside][valid]
-    denominator = denominator[valid]
-    local_pseudo = local_pseudo[valid]
-    prefactor = 2.0 * fields.voxel_volume * fields.density.take(points)
-    # The dot product of two shells' exchange vectors depends only on the shells.
-    dot_table = np.sum(
-        fields.vectors[atom_i][:, np.newaxis] * fields.vectors[atom_j][np.newaxis],
-        axis=2,
-    )
-    dot_products = dot_table.take(shells_i * NSHELLS + shells_j)
-    ratio = dot_products / denominator
+    points = sample.indices.take(selected)
+    shell_pairs = sample.shells.take(selected).astype(np.intp) * NSHELLS
+    shell_pairs += shells_j[inside]
+    sums = [
+        np.bincount(shell_pairs, weights=factor.take(points), minlength=NSHELLS**2)
+        for factor in fields.point_factors
+    ]
+    vectors, weights = fields.vectors, fields.weights
+    # The dot products of the two atoms' exchange vectors, shell by shell.
+    dot_products = np.sum(
+        vectors[atom_i][:, np.newaxis] * vectors[atom_j][np.newaxis], axis=2
+    ).ravel()
+    weight_products = np.multiply.outer(weights[atom_i], weights[atom_j]).ravel()
     integrals = np.asarray(
         [
-            np.sum(prefactor * ratio),
-            np.sum(prefactor * dot_products / fields.squared_first.take(points)),
-            np.sum(
-                prefactor
-                * fields.weights[atom_i].take(shells_i)
-                * fields.weights[atom_j].take(shells_j)
-                / local_pseudo**2
-            ),
-            (10.0 / 3.0) * np.sum(prefactor * ratio**2),
+            sums[0] @ dot_products,
+            sums[1] @ dot_products,
+            sums[2] @ weight_products,
+            (10.0 / 3.0) * (sums[3] @ dot_products**2),
         ],
         dtype=np.float64,
     )
@@ -559,13 +567,15 @@ def compute_bond_orders(  # noqa: PLR0913
         correction.density, samples, vectors, total_vectors, squared_total, voxel_volume
     )
     fields = _PairFields(
-        density=correction.density,
         weights=weights,
-        pseudodensity=pseudodensity,
         vectors=vectors,
-        squared_total=squared_total,
-        squared_first=total_vectors[:, 0] ** 2,
-        voxel_volume=voxel_volume,
+        point_factors=_point_factors(
+            correction.density,
+            pseudodensity,
+            squared_total,
+            total_vectors[:, 0] ** 2,
+            voxel_volume,
+        ),
     )
     first: list[int] = []
     second: list[int] = []

@@ -88,6 +88,13 @@ on the regression fixtures, mostly by floating-point rounding.
   instead of counting the others again. Results are bit-identical; the
   core partition takes 7–21 % less time and the DDEC6 partition 8–28 %,
   from NaCl to the α-quartz cell at 96³.
+- Integrate each bond pair as sums over pairs of radial shells. Every
+  integrand is a factor of the grid point times a function of its two
+  shells, so the point factors are computed once on the grid, summed per
+  shell pair, and weighted by the shell functions. The bond analysis of
+  the α-quartz cell at 96³ takes 27 s instead of 38 s. Summing in a
+  different order moves overlap populations, contact exchanges and bond
+  orders by at most 9e-16; charges, multipoles and spins are unchanged.
 
 ## 1.0.0
 
