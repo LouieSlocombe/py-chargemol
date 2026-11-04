@@ -399,10 +399,14 @@ def _assert_pairs_match(
     )
 
 
-def test_nacl_reproduces_the_original_chargemol_calculation() -> None:
+@pytest.mark.parametrize("method", ["DDEC6", "DDEC3"])
+def test_nacl_reproduces_the_original_chargemol_calculation(method: str) -> None:
+    # Chargemol prints each to six decimals, and overlaps to ten. DDEC3 takes
+    # about 20 s here: it converges in 101 iterations, DDEC6 in 7.
     metadata, grid = _density_example("nacl")
-    result = compute_ddec6(grid)
-    reference = metadata["DDEC6"]
+    result = compute_ddec(grid, method=method.lower())
+    reference = metadata[method]
+    assert result.method == method.lower()
     assert result.moments is None
     for field in (
         "net_charges",
