@@ -1,8 +1,9 @@
 """End-to-end density calculations with no external executable or data path."""
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -383,24 +384,67 @@ def test_analyze_cli_respects_job_controls_and_explicit_overrides(  # noqa: PLR0
     assert (output / "QDR-DDEC6_point_charges.xyz").exists() == qdr
 
 
-def test_nacl_reproduces_the_original_chargemol_calculation() -> None:
+def _density_example(name: str) -> tuple[dict[str, Any], DensityGrid]:
+    """A stored density example's metadata and grid."""
     directory = Path(__file__).parent / "density_examples"
-    metadata = json.loads((directory / "nacl.json").read_text())
+    metadata = json.loads((directory / f"{name}.json").read_text())
     fields = {}
-    for name in ("density", "core_density", "pseudodensity"):
-        with np.load(directory / f"nacl_{name}.npz", allow_pickle=False) as archive:
-            fields[name] = archive["values"]
+    for field in ("density", "core_density", "pseudodensity"):
+        with np.load(directory / f"{name}_{field}.npz", allow_pickle=False) as archive:
+            fields[field] = archive["values"]
     grid = DensityGrid(
         atomic_numbers=np.array(metadata["atomic_numbers"]),
         positions=np.array(metadata["positions"]),
         origin=np.array(metadata["origin"]),
         steps=np.array(metadata["steps"]),
         core_electrons=np.array(metadata["core_electrons"]),
-        periodic=(True, True, True),
+        periodic=tuple(metadata["periodic"]),
+        net_charge=metadata["net_charge"],
         **fields,
     )
-    result = compute_ddec6(grid)
-    reference = metadata["DDEC6"]
+    return metadata, grid
+
+
+def _by_pair(
+    atom1: Iterable[Any],
+    atom2: Iterable[Any],
+    translations: Iterable[Any],
+    *values: Iterable[Any],
+) -> dict[tuple[int, ...], tuple[float, ...]]:
+    """Directed-pair values keyed by both atoms and the image translation."""
+    return {
+        (int(first), int(second), *map(int, shift)): tuple(map(float, value))
+        for first, second, shift, *value in zip(
+            atom1, atom2, translations, *values, strict=True
+        )
+    }
+
+
+def _assert_pairs_match(
+    computed: dict[tuple[int, ...], tuple[float, ...]],
+    recorded: dict[tuple[int, ...], tuple[float, ...]],
+    *,
+    rtol: float,
+    atol: float,
+) -> None:
+    assert computed.keys() == recorded.keys()
+    pairs = list(recorded)
+    np.testing.assert_allclose(
+        [computed[pair] for pair in pairs],
+        [recorded[pair] for pair in pairs],
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+@pytest.mark.parametrize("method", ["DDEC6", "DDEC3"])
+def test_nacl_reproduces_the_original_chargemol_calculation(method: str) -> None:
+    # Chargemol prints each to six decimals, and overlaps to ten. DDEC3 takes
+    # about 20 s here: it converges in 101 iterations, DDEC6 in 7.
+    metadata, grid = _density_example("nacl")
+    result = compute_ddec(grid, method=method.lower())
+    reference = metadata[method]
+    assert result.method == method.lower()
     assert result.moments is None
     for field in (
         "net_charges",
@@ -413,22 +457,62 @@ def test_nacl_reproduces_the_original_chargemol_calculation() -> None:
             getattr(result.analysis, field), reference[field], atol=1e-6, rtol=0
         )
     expected = reference["overlaps"]
-    reference_pairs = {
-        (first, second, *shift): value
-        for first, second, shift, value in zip(
+    overlaps = result.overlaps
+    _assert_pairs_match(
+        _by_pair(
+            overlaps.atom1, overlaps.atom2, overlaps.translations, overlaps.populations
+        ),
+        _by_pair(
             expected["atom1"],
             expected["atom2"],
             expected["translations"],
             expected["populations"],
-            strict=True,
-        )
+        ),
+        rtol=0,
+        atol=1e-8,
+    )
+
+
+def test_quartz_reproduces_its_recorded_partition() -> None:
+    # The references are this package's own results (density_examples/README.md),
+    # so this catches changes rather than errors. Rounding moves them by about
+    # 1e-12, and any change to the method by far more than the tolerance.
+    metadata, grid = _density_example("quartz")
+    result = compute_ddec6(grid)
+    reference = metadata["DDEC6"]
+    analysis = result.analysis
+    computed = {
+        "net_charges": analysis.net_charges,
+        "atomic_dipoles": analysis.atomic_dipoles,
+        "atomic_quadrupoles": analysis.atomic_quadrupoles,
+        "cloud_a": analysis.cloud_a,
+        "cloud_b": analysis.cloud_b,
+        "hirshfeld_charges": result.hirshfeld_charges,
+        "cm5_charges": result.cm5_charges,
+        "radial_moments": result.radial_moments,
+        "summed_bond_orders": result.bonds.summed_bond_orders,
     }
-    assert len(result.overlaps) == len(reference_pairs)
-    for first, second, shift, value in zip(
-        result.overlaps.atom1,
-        result.overlaps.atom2,
-        result.overlaps.translations,
-        result.overlaps.populations,
-        strict=True,
-    ):
-        assert value == pytest.approx(reference_pairs[first, second, *shift], abs=1e-8)
+    for field, values in computed.items():
+        np.testing.assert_allclose(
+            values, reference[field], rtol=1e-9, atol=1e-9, err_msg=field
+        )
+    expected = reference["overlaps"]
+    overlaps = result.overlaps
+    _assert_pairs_match(
+        _by_pair(
+            overlaps.atom1,
+            overlaps.atom2,
+            overlaps.translations,
+            overlaps.populations,
+            result.bonds.bond_orders,
+        ),
+        _by_pair(
+            expected["atom1"],
+            expected["atom2"],
+            expected["translations"],
+            expected["populations"],
+            expected["bond_orders"],
+        ),
+        rtol=1e-9,
+        atol=1e-9,
+    )
