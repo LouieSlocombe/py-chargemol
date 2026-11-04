@@ -132,12 +132,12 @@ def _local_averages(
     inverse = reciprocal(pseudo)
     for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
         local_inverse = inverse[sample.indices]
-        values = weights[atom][sample.shells] * density * local_inverse
+        # Widened once: the stored uint8 shells would be cast at every use.
+        shells = sample.shells.astype(np.intp)
+        values = weights[atom][shells] * density * local_inverse
         local.append(values)
-        counts[atom] = np.bincount(
-            sample.shells, weights=local_inverse > 0, minlength=NSHELLS
-        )
-        sums = np.bincount(sample.shells, weights=values, minlength=NSHELLS)
+        counts[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        sums = np.bincount(shells, weights=values, minlength=NSHELLS)
         averages[atom] = np.divide(
             sums, counts[atom], out=np.zeros(NSHELLS), where=counts[atom] > 0
         )

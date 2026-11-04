@@ -76,7 +76,8 @@ def _shell_statistics(
     for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
         # Points below the threshold contribute zeros rather than being removed.
         local_inverse = inverse[sample.indices]
-        shells = sample.shells
+        # Widened once: the stored uint8 shells would be cast at every use.
+        shells = sample.shells.astype(np.intp)
         fractions = weights[atom][shells] * local_inverse
         local = fractions * density
         points[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)

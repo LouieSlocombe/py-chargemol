@@ -11,6 +11,7 @@ from py_chargemol.density.grid import (
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
+    sample_index_type,
 )
 
 
@@ -174,6 +175,45 @@ def test_skew_grid_samples_are_invariant_under_cartesian_rotation() -> None:
     np.testing.assert_array_equal(first.shells, second.shells)
     np.testing.assert_array_equal(first.coordinates, second.coordinates)
     np.testing.assert_allclose(first.displacements @ rotation, second.displacements)
+
+
+def test_samples_store_narrow_types_and_derive_their_displacements() -> None:
+    steps = np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]])
+    grid = _grid(
+        density=np.ones((4, 5, 6)),
+        steps=steps,
+        positions=np.array([[0.7, 1.9, 0.4]]),
+        origin=np.array([-0.3, 0.1, 0.2]),
+        periodic=(True, False, True),
+    )
+    (sample,) = atomic_samples(grid)
+    assert sample.indices.dtype == np.int32
+    assert sample.shells.dtype == np.uint8
+    assert sample.coordinates.dtype == np.int32
+    # The displacements are the bits the broadcast over the box once stored.
+    lower = sample.coordinates.min(axis=0)
+    axes = [
+        np.arange(lo, hi + 1)
+        for lo, hi in zip(lower, sample.coordinates.max(axis=0), strict=True)
+    ]
+    x, y, z = (np.multiply.outer(s, a) for a, s in zip(axes, steps, strict=True))
+    components = (
+        x[:, :, None, None]
+        + y[:, None, :, None]
+        + z[:, None, None, :]
+        + (grid.origin - grid.positions[0])[:, None, None, None]
+    )
+    box = (sample.coordinates - lower).T
+    np.testing.assert_array_equal(
+        sample.displacements, components[:, box[0], box[1], box[2]].T
+    )
+    some = sample.coordinates[::3]
+    np.testing.assert_array_equal(sample.cartesian(some), sample.displacements[::3])
+
+
+def test_sample_indices_widen_only_for_grids_beyond_int32() -> None:
+    assert sample_index_type(2**31 - 1) is np.int32
+    assert sample_index_type(2**31) is np.int64
 
 
 def test_nuclear_stencils_respect_boundaries_and_periodic_images() -> None:

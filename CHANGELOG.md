@@ -44,6 +44,14 @@ on the regression fixtures, mostly by floating-point rounding.
   the peak of a VASP α-quartz cell at its own grid from 4.3 to 3.0 GB. Charges
   and multipoles are unchanged. Bond orders of a spin-polarized density need
   the spin partition, so `compute_spin=False` requires `compute_bos=False`.
+- Store atomic integration samples in 17 bytes per point instead of 52: int32
+  flat indices (int64 only for grids beyond 2**31 points), uint8 shells and
+  the int32 grid coordinates. Cartesian displacements are derived from the
+  coordinates when read, in the order they were stored in, and bond
+  integration derives each atom's once for all its pairs. Results are
+  bit-identical. On the α-quartz cell the peak falls from 4.3 to 2.7 GB, or
+  from 3.0 to 1.8 GB without the spin partition; the core and DDEC6
+  partitions take 5–10 % longer, bond orders about 4 %.
 - Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is

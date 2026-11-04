@@ -13,6 +13,7 @@ from functools import lru_cache
 from typing import Protocol
 
 import numpy as np
+import numpy.typing as npt
 
 from py_chargemol.ddec6 import FloatArray, IntArray, OverlapPairs
 from py_chargemol.density.grid import (
@@ -72,8 +73,8 @@ class _DensityCorrection:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class _PairSample:
-    indices: IntArray
-    shells: IntArray
+    indices: npt.NDArray[np.integer]
+    shells: npt.NDArray[np.integer]
     displacements: FloatArray
 
 
@@ -122,6 +123,7 @@ def _shared_domain(  # noqa: PLR0913, PLR0917
     shift: IntArray,
     separation: FloatArray,
     sample: AtomicSampleLike,
+    displacements: FloatArray,
 ) -> AtomicSampleLike:
     center_i = domain.centers[atom_i]
     center_j = domain.centers[atom_j] + shift * domain.shape
@@ -147,10 +149,11 @@ def _shared_domain(  # noqa: PLR0913, PLR0917
     )
     coordinates = domain.coordinates[atom_i][window]
     active = np.all((coordinates >= lower) & (coordinates <= upper), axis=1)
+    # A pair's points are few and used often, so they are indexed as intp.
     return _PairSample(
-        sample.indices[window][active],
-        sample.shells[window][active],
-        sample.displacements[window][active],
+        sample.indices[window][active].astype(np.intp),
+        sample.shells[window][active].astype(np.intp),
+        displacements[window][active],
     )
 
 
@@ -530,6 +533,7 @@ def compute_bond_orders(  # noqa: PLR0913
     second: list[int] = []
     shifts: list[IntArray] = []
     integral_rows: list[FloatArray] = []
+    displaced_atom, displacements = -1, np.empty((0, 3))
     for atom_i, atom_j, shift, separation in _candidate_pairs(
         positions, lattice_vectors, periodic
     ):
@@ -548,7 +552,13 @@ def compute_bond_orders(  # noqa: PLR0913
         shifts.append(shift)
         sample = samples[atom_i]
         if domains is not None:
-            sample = _shared_domain(domains, atom_i, atom_j, shift, separation, sample)
+            # Atomic samples derive their displacements when read, and pairs
+            # come grouped by their first atom: derive them once per atom.
+            if atom_i != displaced_atom:
+                displaced_atom, displacements = atom_i, sample.displacements
+            sample = _shared_domain(
+                domains, atom_i, atom_j, shift, separation, sample, displacements
+            )
         integral_rows.append(
             _pair_integrals(
                 atom_i,
