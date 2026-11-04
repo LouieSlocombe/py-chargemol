@@ -52,6 +52,13 @@ on the regression fixtures, mostly by floating-point rounding.
   bit-identical. On the α-quartz cell the peak falls from 4.3 to 2.7 GB, or
   from 3.0 to 1.8 GB without the spin partition; the core and DDEC6
   partitions take 5–10 % longer, bond orders about 4 %.
+- Partition one atom at a time. The core, DDEC6 and DDEC3 partitions no longer
+  keep every atom's gathered density, nor the core partition every atom's
+  assigned density, at once: 16 bytes per sample point in the core partition
+  and 8 in the others. Results are bit-identical. The α-quartz cell's
+  charge-only peak falls from 1.8 to 1.4 GB, now set by building the samples,
+  for a core partition about a quarter slower and DDEC6 and DDEC3 partitions
+  about 15 % slower.
 - Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is

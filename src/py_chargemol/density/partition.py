@@ -54,17 +54,10 @@ class PartitionResult:
     iterations: int
 
 
-def local_densities(
-    density: FloatArray, samples: Sequence[AtomicSample]
-) -> list[FloatArray]:
-    """Gather the density at each atom's sample points once per partition."""
-    return [density[sample.indices] for sample in samples]
-
-
 def _shell_statistics(
     weights: FloatArray,
     samples: Sequence[AtomicSample],
-    densities: Sequence[FloatArray],
+    density: FloatArray,
     total: FloatArray,
     threshold: float = _ZERO,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
@@ -73,13 +66,14 @@ def _shell_statistics(
         np.zeros(shape) for _ in range(4)
     )
     inverse = reciprocal(total, threshold)
-    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+    # One atom at a time, so no array per sample point outlives its atom.
+    for atom, sample in enumerate(samples):
         # Points below the threshold contribute zeros rather than being removed.
         local_inverse = inverse[sample.indices]
         # Widened once: the stored uint8 shells would be cast at every use.
         shells = sample.shells.astype(np.intp)
         fractions = weights[atom][shells] * local_inverse
-        local = fractions * density
+        local = fractions * density[sample.indices]
         points[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
         assigned[atom] = np.bincount(shells, weights=local, minlength=NSHELLS)
         weighted_points[atom] = np.bincount(
@@ -112,7 +106,7 @@ def _normalize_population(
 def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     atomic_numbers: IntArray,
     samples: Sequence[AtomicSample],
-    densities: Sequence[FloatArray],
+    density: FloatArray,
     size: int,
     pixel_volume: float,
     core_electrons: FloatArray,
@@ -127,7 +121,7 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     for step in range(2):
         total = pseudodensity(weights, samples, size)
         localized_total = pseudodensity(weights**4, samples, size)
-        _, assigned, _, _ = _shell_statistics(weights, samples, densities, total)
+        _, assigned, _, _ = _shell_statistics(weights, samples, density, total)
         populations, normalization = _normalize_population(
             assigned,
             pixel_volume,
@@ -136,11 +130,12 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
             valence_electrons,
         )
         localized_population = np.zeros(len(samples))
-        for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+        for atom, sample in enumerate(samples):
+            local_density = density[sample.indices]
             localized = np.divide(
-                weights[atom, sample.shells] ** 4 * density,
+                weights[atom, sample.shells] ** 4 * local_density,
                 localized_total[sample.indices],
-                out=np.zeros(len(density)),
+                out=np.zeros(len(local_density)),
                 where=total[sample.indices] > _ZERO,
             )
             localized_population[atom] = pixel_volume * np.sum(localized)
@@ -159,7 +154,7 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
     weights: FloatArray,
     atomic_numbers: IntArray,
     samples: Sequence[AtomicSample],
-    densities: Sequence[FloatArray],
+    density: FloatArray,
     size: int,
     pixel_volume: float,
     core_electrons: FloatArray,
@@ -170,7 +165,7 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
 ) -> FloatArray:
     total = pseudodensity(weights, samples, size)
     points, assigned, _, _ = _shell_statistics(
-        weights, samples, densities, total, _ZERO**2
+        weights, samples, density, total, _ZERO**2
     )
     sigma = np.divide(assigned, points, out=np.zeros_like(assigned), where=points > 0)
     population = assigned.sum(axis=1) * pixel_volume
@@ -237,11 +232,10 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     if valence_electrons <= 0:
         msg = "DDEC6 partitioning requires a positive number of valence electrons"
         raise ValueError(msg)
-    densities = local_densities(density, samples)
     weights, reference_charges, hirshfeld, charges = _reference_steps(
         atomic_numbers,
         samples,
-        densities,
+        density,
         density.size,
         pixel_volume,
         core_electrons,
@@ -253,7 +247,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         weights,
         atomic_numbers,
         samples,
-        densities,
+        density,
         density.size,
         pixel_volume,
         core_electrons,
@@ -270,7 +264,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     for iteration in range(_FIRST_ITERATION, 501):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, weighted_points, weighted_density = _shell_statistics(
-            weights, samples, densities, total
+            weights, samples, density, total
         )
         spherical = np.divide(
             assigned, points, out=np.zeros_like(assigned), where=points > 0

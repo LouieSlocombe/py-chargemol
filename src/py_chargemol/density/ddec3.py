@@ -12,7 +12,6 @@ from py_chargemol.density.partition import (
     PartitionResult,
     _normalize_population,
     _shell_statistics,
-    local_densities,
     pseudodensity,
 )
 from py_chargemol.density.references import reference_densities
@@ -28,7 +27,7 @@ def _reference_averages(  # noqa: PLR0913, PLR0917 -- Physical radial averages.
     references: FloatArray,
     conditioned: FloatArray,
     samples: Sequence[AtomicSample],
-    densities: Sequence[FloatArray],
+    density: FloatArray,
     total: FloatArray,
     points: FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
@@ -37,13 +36,14 @@ def _reference_averages(  # noqa: PLR0913, PLR0917 -- Physical radial averages.
     conditioned_total = pseudodensity(conditioned, samples, size)
     average_ratio = np.ones_like(references)
     tau = np.ones_like(references)
-    for atom, (sample, density) in enumerate(zip(samples, densities, strict=True)):
+    # One atom at a time, so no array per sample point outlives its atom.
+    for atom, sample in enumerate(samples):
         # Points outside the partition contribute zeros rather than being removed.
         valid = total[sample.indices] > _ZERO
         shells = sample.shells
         local_reference = reference_total[sample.indices]
         ratio = np.divide(
-            density,
+            density[sample.indices],
             local_reference,
             out=np.ones(len(shells)),
             where=local_reference > _ZERO**2,
@@ -117,14 +117,13 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     renormalization = np.ones(len(samples))
     charge_changes = [1.0] * 4
     density_changes = [0.1] * 4
-    densities = local_densities(density, samples)
     for iteration in range(1, 2001):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, _, weighted_density = _shell_statistics(
-            weights, samples, densities, total
+            weights, samples, density, total
         )
         ratios, tau = _reference_averages(
-            references, conditioned, samples, densities, total, points
+            references, conditioned, samples, density, total, points
         )
         old_spherical = spherical
         spherical = np.divide(
