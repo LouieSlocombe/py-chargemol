@@ -103,7 +103,9 @@ Use `--atomic-densities` to export spherical atomic densities and radial integra
 or `write_density_results(ddec, "results", atomic_densities=True)` in Python.
 `--no-bonds` (or `<compute bos> .false. </compute bos>` in the job controls)
 skips bond orders, radial moments, atomic-density exports, and QDR. The Python
-equivalent is `compute_ddec6(grid, compute_bos=False)`.
+equivalent is `compute_ddec6(grid, compute_bos=False)`. Adding
+`compute_spin=False` also skips the spin partition of a spin-polarized grid,
+the largest memory cost of a charge-only analysis.
 
 Supported density sources:
 

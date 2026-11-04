@@ -37,6 +37,13 @@ on the regression fixtures, mostly by floating-point rounding.
 - Reduce peak memory by about a quarter. Atomic integration samples store int32
   grid `coordinates`, which bond integration reuses, in place of the unused
   image `translations`.
+- Add `compute_spin=False` to `compute_ddec6`, `compute_ddec3` and
+  `compute_ddec`, which skips the spin partition and spin-gradient diagnostics
+  of a spin-polarized grid. The spin partition holds several arrays per sample
+  point and sets the peak memory of a charge-only analysis: skipping it lowers
+  the peak of a VASP α-quartz cell at its own grid from 4.3 to 3.0 GB. Charges
+  and multipoles are unchanged. Bond orders of a spin-polarized density need
+  the spin partition, so `compute_spin=False` requires `compute_bos=False`.
 - Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is

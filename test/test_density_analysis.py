@@ -1,6 +1,7 @@
 """End-to-end density calculations with no external executable or data path."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -106,6 +107,44 @@ def test_spin_density_flows_through_to_spin_populations_and_bonds(
     expected = np.array([0.0, 0.36, 0.48]) if vector else 0.6
     np.testing.assert_allclose(result.spin.populations.sum(axis=0), expected, atol=1e-5)
     assert np.all(np.isfinite(result.bonds.bond_orders))
+
+
+@pytest.mark.parametrize("vector", [False, True])
+def test_spin_partition_can_be_skipped_without_changing_charges(
+    hydrogen_density: DensityGrid,
+    vector: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scalar = hydrogen_density.density * 0.3
+    hydrogen_density.spin_density = (
+        scalar[..., None] * np.array([0.0, 0.6, 0.8]) if vector else scalar
+    )
+    full = compute_ddec6(hydrogen_density, compute_bos=False)
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("compute_spin=False must not partition spin")
+
+    for name in ("partition_spin", "compute_spin_gradient_diagnostics"):
+        monkeypatch.setattr(f"py_chargemol.density.analysis.{name}", unexpected)
+    result = compute_ddec6(hydrogen_density, compute_bos=False, compute_spin=False)
+    assert result.spin is None
+    assert result.spin_gradients is None
+    np.testing.assert_array_equal(result.charges, full.charges)
+    np.testing.assert_array_equal(
+        result.analysis.atomic_dipoles, full.analysis.atomic_dipoles
+    )
+    np.testing.assert_array_equal(
+        result.analysis.atomic_quadrupoles, full.analysis.atomic_quadrupoles
+    )
+
+
+@pytest.mark.parametrize("compute", [compute_ddec6, compute_ddec3])
+def test_skipping_spin_requires_skipping_bonds(
+    hydrogen_density: DensityGrid,
+    compute: Callable[..., object],
+) -> None:
+    with pytest.raises(ValueError, match="compute_spin=False requires"):
+        compute(hydrogen_density, compute_spin=False)
 
 
 @pytest.mark.parametrize("method", ["ddec6", "ddec3"])

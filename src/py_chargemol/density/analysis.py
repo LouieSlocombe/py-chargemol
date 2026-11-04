@@ -134,18 +134,30 @@ class DDECResult:
 DDEC6Result = DDECResult
 
 
-def compute_ddec6(grid: DensityGrid, *, compute_bos: bool = True) -> DDECResult:
+def compute_ddec6(
+    grid: DensityGrid, *, compute_bos: bool = True, compute_spin: bool = True
+) -> DDECResult:
     """Compute DDEC6 charges, atomic multipoles, spin moments and bonds."""
-    return compute_ddec(grid, method="ddec6", compute_bos=compute_bos)
+    return compute_ddec(
+        grid, method="ddec6", compute_bos=compute_bos, compute_spin=compute_spin
+    )
 
 
-def compute_ddec3(grid: DensityGrid, *, compute_bos: bool = True) -> DDECResult:
+def compute_ddec3(
+    grid: DensityGrid, *, compute_bos: bool = True, compute_spin: bool = True
+) -> DDECResult:
     """Compute the older DDEC3 charge partition and its associated moments."""
-    return compute_ddec(grid, method="ddec3", compute_bos=compute_bos)
+    return compute_ddec(
+        grid, method="ddec3", compute_bos=compute_bos, compute_spin=compute_spin
+    )
 
 
 def compute_ddec(
-    grid: DensityGrid, *, method: str = "ddec6", compute_bos: bool = True
+    grid: DensityGrid,
+    *,
+    method: str = "ddec6",
+    compute_bos: bool = True,
+    compute_spin: bool = True,
 ) -> DDECResult:
     """Compute DDEC populations, atomic multipoles, and bonds using NumPy.
 
@@ -153,13 +165,26 @@ def compute_ddec(
     installation, external executable, or network access is used. Input density
     still comes from an electronic-structure calculation. ``compute_bos=False``
     skips bond orders, overlaps, corrected atomic densities, and radial moments.
+    ``compute_spin=False`` skips the spin partition and spin-gradient
+    diagnostics of a spin-polarized grid, which hold several arrays per sample
+    point and set the peak memory of a charge-only analysis. Bond orders of a
+    spin-polarized density depend on its spin partition, so skipping it
+    requires ``compute_bos=False``.
     """
     if method not in ("ddec6", "ddec3"):
         msg = "method must be 'ddec6' or 'ddec3'"
         raise ValueError(msg)
+    if compute_bos and not compute_spin:
+        msg = (
+            "bond orders need the spin partition: "
+            "compute_spin=False requires compute_bos=False"
+        )
+        raise ValueError(msg)
     spin_gradients = (
         compute_spin_gradient_diagnostics(grid)
-        if grid.spin_density is not None and grid.spin_density.ndim == _DIMENSIONS + 1
+        if compute_spin
+        and grid.spin_density is not None
+        and grid.spin_density.ndim == _DIMENSIONS + 1
         else None
     )
     samples = atomic_samples(grid)
@@ -219,7 +244,7 @@ def compute_ddec(
         lattice_vectors=grid.lattice_vectors * np.asarray(grid.periodic)[:, None],
     )
     spin = None
-    if grid.spin_density is not None:
+    if compute_spin and grid.spin_density is not None:
         shape = (-1,) if grid.spin_density.ndim == _DIMENSIONS else (-1, 3)
         correction = (
             None if grid.atomic_corrections is None else grid.atomic_corrections[:, 1]
