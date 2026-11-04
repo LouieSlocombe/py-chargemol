@@ -63,6 +63,10 @@ on the regression fixtures, mostly by floating-point rounding.
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is
   kept as an occupancy correction so electrons are conserved.
+- Skip an unused core-density average. Since the core partition rebuilds
+  each atom's assigned density when it corrects the density, the averages
+  it took after every weight update were never read. Results are
+  bit-identical, and the core partition takes 5–15 % less time.
 
 ## 1.0.0
 

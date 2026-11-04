@@ -69,8 +69,8 @@ def partition_core(
     for _ in range(40):
         correction = core_electrons - populations
         adjusted = np.zeros_like(density)
-        # Each atom's assigned core density is made again from the density,
-        # weights and pseudodensity the last averages used, one atom at a time.
+        # Each atom's assigned core density is made from the current density,
+        # weights and pseudodensity, one atom at a time.
         inverse = reciprocal(pseudo)
         for atom, (sample, delta) in enumerate(zip(samples, correction, strict=True)):
             values = _assigned(density, weights[atom], inverse, sample)
@@ -89,7 +89,6 @@ def partition_core(
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-        totals, counts, averages = _local_averages(density, weights, pseudo, samples)
     if np.max(np.abs(core_electrons - populations)) >= _CHARGE_TOLERANCE:
         msg = (
             "core density could not be corrected to the requested electron populations"
