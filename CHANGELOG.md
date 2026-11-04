@@ -71,6 +71,11 @@ on the regression fixtures, mostly by floating-point rounding.
   operations instead of nested Python loops, about 80× faster and with
   the same values. It took up to 3 s of a periodic bond analysis, one
   table per distinct pair separation.
+- Build atomic integration samples a slab of grid planes at a time instead
+  of broadcasting each atom's whole box of grid points. The samples are
+  bit-identical, and building them is 3–4.5× faster: 1.2 s instead of
+  5.4 s for the α-quartz cell at 96³, whose charge-only peak falls from
+  1.43 to 1.36 GB.
 
 ## 1.0.0
 

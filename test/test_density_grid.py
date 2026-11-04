@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from py_chargemol.density import grid as grid_module
 from py_chargemol.density.grid import (
     CUTOFF,
     AtomicSample,
@@ -231,3 +232,30 @@ def test_nuclear_stencils_respect_boundaries_and_periodic_images() -> None:
 def test_atom_outside_molecular_grid_has_no_sampled_points() -> None:
     (sample,) = atomic_samples(_grid(positions=np.full((1, 3), 100.0)))
     assert sample.indices.size == 0
+    assert sample.indices.dtype == np.int32
+    assert sample.shells.dtype == np.uint8
+    assert sample.coordinates.shape == (0, 3)
+    assert sample.coordinates.dtype == np.int32
+
+
+def test_samples_do_not_depend_on_the_slabs_they_are_measured_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grid = _grid(
+        atomic_numbers=np.array([1, 8]),
+        density=np.ones((4, 5, 6)),
+        steps=np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]]),
+        positions=np.array([[0.7, 1.9, 0.4], [2.1, 0.3, 3.3]]),
+        origin=np.array([-0.3, 0.1, 0.2]),
+        periodic=(True, False, True),
+    )
+    whole = atomic_samples(grid)
+    # One first-axis plane per slab.
+    monkeypatch.setattr(grid_module, "_SLAB_POINTS", 1)
+    planes = atomic_samples(grid)
+    for expected, actual in zip(whole, planes, strict=True):
+        for name in ("indices", "shells", "coordinates", "offset"):
+            np.testing.assert_array_equal(
+                getattr(actual, name), getattr(expected, name)
+            )
+            assert getattr(actual, name).dtype == getattr(expected, name).dtype
