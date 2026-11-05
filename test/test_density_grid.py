@@ -5,13 +5,17 @@ from typing import Any
 import numpy as np
 import pytest
 
+from py_chargemol.density import grid as grid_module
 from py_chargemol.density.grid import (
     CUTOFF,
+    NSHELLS,
     AtomicSample,
     DensityGrid,
     atomic_samples,
     nuclear_stencils,
+    occupied_counts,
     sample_index_type,
+    shell_counts,
 )
 
 
@@ -209,6 +213,30 @@ def test_samples_store_narrow_types_and_derive_their_displacements() -> None:
     )
     some = sample.coordinates[::3]
     np.testing.assert_array_equal(sample.cartesian(some), sample.displacements[::3])
+    rows = sample.displacement_rows()
+    assert rows.flags.c_contiguous
+    np.testing.assert_array_equal(rows, sample.displacements.T)
+
+
+def test_occupied_counts_match_counting_the_occupied_points() -> None:
+    grid = _grid(
+        density=np.ones((4, 5, 6)),
+        steps=np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]]),
+        periodic=(True, False, True),
+    )
+    samples = atomic_samples(grid)
+    (counts,) = shell_counts(samples)
+    (sample,) = samples
+    shells = sample.shells.astype(np.intp)
+    np.testing.assert_array_equal(counts, np.bincount(shells, minlength=NSHELLS))
+    full = np.ones(len(shells))
+    assert occupied_counts(counts, shells, full) is counts
+    # Every third point without a reciprocal.
+    partial = np.where(np.arange(len(shells)) % 3 == 0, 0.0, 2.0)
+    expected = np.bincount(shells, weights=partial > 0, minlength=NSHELLS)
+    actual = occupied_counts(counts, shells, partial)
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
 
 
 def test_sample_indices_widen_only_for_grids_beyond_int32() -> None:
@@ -231,3 +259,30 @@ def test_nuclear_stencils_respect_boundaries_and_periodic_images() -> None:
 def test_atom_outside_molecular_grid_has_no_sampled_points() -> None:
     (sample,) = atomic_samples(_grid(positions=np.full((1, 3), 100.0)))
     assert sample.indices.size == 0
+    assert sample.indices.dtype == np.int32
+    assert sample.shells.dtype == np.uint8
+    assert sample.coordinates.shape == (0, 3)
+    assert sample.coordinates.dtype == np.int32
+
+
+def test_samples_do_not_depend_on_the_slabs_they_are_measured_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grid = _grid(
+        atomic_numbers=np.array([1, 8]),
+        density=np.ones((4, 5, 6)),
+        steps=np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]]),
+        positions=np.array([[0.7, 1.9, 0.4], [2.1, 0.3, 3.3]]),
+        origin=np.array([-0.3, 0.1, 0.2]),
+        periodic=(True, False, True),
+    )
+    whole = atomic_samples(grid)
+    # One first-axis plane per slab.
+    monkeypatch.setattr(grid_module, "_SLAB_POINTS", 1)
+    planes = atomic_samples(grid)
+    for expected, actual in zip(whole, planes, strict=True):
+        for name in ("indices", "shells", "coordinates", "offset"):
+            np.testing.assert_array_equal(
+                getattr(actual, name), getattr(expected, name)
+            )
+            assert getattr(actual, name).dtype == getattr(expected, name).dtype

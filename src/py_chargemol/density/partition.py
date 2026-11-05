@@ -10,7 +10,13 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from py_chargemol.density.grid import NSHELLS, SCALE, reciprocal
+from py_chargemol.density.grid import (
+    NSHELLS,
+    SCALE,
+    occupied_counts,
+    reciprocal,
+    shell_counts,
+)
 from py_chargemol.density.grid import (
     RadialSample as AtomicSample,
 )
@@ -54,13 +60,19 @@ class PartitionResult:
     iterations: int
 
 
-def _shell_statistics(
+def _shell_statistics(  # noqa: PLR0913, PLR0917 -- Radial sums of one partition step.
     weights: FloatArray,
     samples: Sequence[AtomicSample],
     density: FloatArray,
     total: FloatArray,
+    counts: FloatArray,
     threshold: float = _ZERO,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
+    """Shell counts and sums of each atom's assigned density.
+
+    ``counts`` holds every atom's ``shell_counts``; points where ``total``
+    does not exceed ``threshold`` are left out of the returned counts.
+    """
     shape = (len(samples), NSHELLS)
     points, assigned, weighted_points, weighted_density = (
         np.zeros(shape) for _ in range(4)
@@ -74,7 +86,7 @@ def _shell_statistics(
         shells = sample.shells.astype(np.intp)
         fractions = weights[atom][shells] * local_inverse
         local = fractions * density[sample.indices]
-        points[atom] = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        points[atom] = occupied_counts(counts[atom], shells, local_inverse)
         assigned[atom] = np.bincount(shells, weights=local, minlength=NSHELLS)
         weighted_points[atom] = np.bincount(
             shells, weights=fractions, minlength=NSHELLS
@@ -113,6 +125,7 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     core_population: FloatArray,
     occupancy_correction: FloatArray,
     valence_electrons: float,
+    counts: FloatArray,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     reference_charges = np.zeros(len(samples))
     weights = reference_densities(atomic_numbers, reference_charges)
@@ -121,7 +134,7 @@ def _reference_steps(  # noqa: PLR0913, PLR0917 -- Physical partitioning inputs.
     for step in range(2):
         total = pseudodensity(weights, samples, size)
         localized_total = pseudodensity(weights**4, samples, size)
-        _, assigned, _, _ = _shell_statistics(weights, samples, density, total)
+        _, assigned, _, _ = _shell_statistics(weights, samples, density, total, counts)
         populations, normalization = _normalize_population(
             assigned,
             pixel_volume,
@@ -162,10 +175,11 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
     occupancy_correction: FloatArray,
     valence_electrons: float,
     reference_charges: FloatArray,
+    counts: FloatArray,
 ) -> FloatArray:
     total = pseudodensity(weights, samples, size)
     points, assigned, _, _ = _shell_statistics(
-        weights, samples, density, total, _ZERO**2
+        weights, samples, density, total, counts, _ZERO**2
     )
     sigma = np.divide(assigned, points, out=np.zeros_like(assigned), where=points > 0)
     population = assigned.sum(axis=1) * pixel_volume
@@ -232,6 +246,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     if valence_electrons <= 0:
         msg = "DDEC6 partitioning requires a positive number of valence electrons"
         raise ValueError(msg)
+    counts = shell_counts(samples)
     weights, reference_charges, hirshfeld, charges = _reference_steps(
         atomic_numbers,
         samples,
@@ -242,6 +257,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         core_population,
         occupancy_correction,
         valence_electrons,
+        counts,
     )
     weights = _condition_references(
         weights,
@@ -255,6 +271,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         occupancy_correction,
         valence_electrons,
         reference_charges,
+        counts,
     )
     first, second = _tail_exponents(weights, samples, density.size)
     completed_steps = 3
@@ -264,7 +281,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     for iteration in range(_FIRST_ITERATION, 501):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, weighted_points, weighted_density = _shell_statistics(
-            weights, samples, density, total
+            weights, samples, density, total, counts
         )
         spherical = np.divide(
             assigned, points, out=np.zeros_like(assigned), where=points > 0

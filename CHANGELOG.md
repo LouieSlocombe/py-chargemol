@@ -63,6 +63,38 @@ on the regression fixtures, mostly by floating-point rounding.
   such as a hydrogen 1s with exponent 6. Its analytic core count could round
   just above the atomic number. Such counts are now clamped, and the excess is
   kept as an occupancy correction so electrons are conserved.
+- Skip an unused core-density average. Since the core partition rebuilds
+  each atom's assigned density when it corrects the density, the averages
+  it took after every weight update were never read. Results are
+  bit-identical, and the core partition takes 5–15 % less time.
+- Build the cylindrical quadrature of bond-pair screening with array
+  operations instead of nested Python loops, about 80× faster and with
+  the same values. It took up to 3 s of a periodic bond analysis, one
+  table per distinct pair separation.
+- Build atomic integration samples a slab of grid planes at a time instead
+  of broadcasting each atom's whole box of grid points. The samples are
+  bit-identical, and building them is 3–4.5× faster: 1.2 s instead of
+  5.4 s for the α-quartz cell at 96³, whose charge-only peak falls from
+  1.43 to 1.36 GB.
+- Integrate bond pairs with fewer passes over their points: bounds checked
+  per column, points gathered once they are known to lie within both
+  atoms' cutoffs, each atom's displacements kept one component per row,
+  and the integrands' denominators and shell-pair dot products computed
+  once rather than per point. Results are bit-identical. With the faster
+  screening above, the bond analysis of the α-quartz cell at 96³ takes
+  34 s instead of 67 s.
+- Count each atom's sample points per shell once per partition, and in
+  each iteration subtract only the few points without a pseudodensity,
+  instead of counting the others again. Results are bit-identical; the
+  core partition takes 7–21 % less time and the DDEC6 partition 8–28 %,
+  from NaCl to the α-quartz cell at 96³.
+- Integrate each bond pair as sums over pairs of radial shells. Every
+  integrand is a factor of the grid point times a function of its two
+  shells, so the point factors are computed once on the grid, summed per
+  shell pair, and weighted by the shell functions. The bond analysis of
+  the α-quartz cell at 96³ takes 27 s instead of 38 s. Summing in a
+  different order moves overlap populations, contact exchanges and bond
+  orders by at most 9e-16; charges, multipoles and spins are unchanged.
 
 ## 1.0.0
 

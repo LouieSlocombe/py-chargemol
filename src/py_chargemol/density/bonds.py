@@ -25,10 +25,13 @@ from py_chargemol.density.grid import (
     RadialSample,
     integration_extent,
     nearest_grid_points,
+    occupied_counts,
     reciprocal,
+    shell_counts,
 )
 
 _CHARGE_TOLERANCE = 1e-5
+_DIMENSIONS = 3
 
 
 class AtomicSampleLike(RadialSample, Protocol):
@@ -72,10 +75,37 @@ class _DensityCorrection:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class _PairSample:
-    indices: npt.NDArray[np.integer]
-    shells: npt.NDArray[np.integer]
-    displacements: FloatArray
+class _PairFields:
+    """Grid and radial arrays shared by every pair integral.
+
+    Each pair integrand is a factor of the grid point alone times a function
+    of the point's two shells. ``point_factors`` holds the four point factors
+    on the grid, ``(4, N)``: twice the voxel volume times the density, over
+    the squared summed exchange vector, its squared first component, the
+    squared pseudodensity, and the squared summed exchange vector squared.
+    They are zero where the exchange vector or pseudodensity is negligible.
+    """
+
+    weights: FloatArray
+    vectors: FloatArray
+    point_factors: FloatArray
+
+
+def _point_factors(
+    density: FloatArray,
+    pseudodensity: FloatArray,
+    squared_total: FloatArray,
+    squared_first: FloatArray,
+    voxel_volume: float,
+) -> FloatArray:
+    """The ``point_factors`` of ``_PairFields``, computed once for all pairs."""
+    valid = (squared_total > ZERO**2) & (pseudodensity > ZERO)
+    prefactor = 2.0 * voxel_volume * density
+    factors = np.zeros((4, len(density)))
+    denominators = (squared_total, squared_first, pseudodensity**2, squared_total**2)
+    for row, denominator in zip(factors, denominators, strict=True):
+        np.divide(prefactor, denominator, out=row, where=valid)
+    return factors
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -116,15 +146,14 @@ def _pair_domains(
     )
 
 
-def _shared_domain(  # noqa: PLR0913, PLR0917
+def _shared_domain(
     domain: _PairDomains,
     atom_i: int,
     atom_j: int,
     shift: IntArray,
     separation: FloatArray,
-    sample: AtomicSampleLike,
-    displacements: FloatArray,
-) -> AtomicSampleLike:
+) -> npt.NDArray[np.intp]:
+    """Positions in atom i's sample of its points in the pair's shared domain."""
     center_i = domain.centers[atom_i]
     center_j = domain.centers[atom_j] + shift * domain.shape
     middle = 0.5 * (center_i + center_j)
@@ -137,32 +166,32 @@ def _shared_domain(  # noqa: PLR0913, PLR0917
         domain.extent + np.minimum(center_i, center_j),
         nearest_grid_points(domain.extent * multiplier + middle) + 2,
     )
-    # Sorted samples are first narrowed to the slab between the first bounds.
+    coordinates = domain.coordinates[atom_i]
     first = domain.sorted_first[atom_i]
-    window = (
-        slice(None)
-        if first is None
-        else slice(
-            int(np.searchsorted(first, lower[0], side="left")),
-            int(np.searchsorted(first, upper[0], side="right")),
-        )
-    )
-    coordinates = domain.coordinates[atom_i][window]
-    active = np.all((coordinates >= lower) & (coordinates <= upper), axis=1)
-    # A pair's points are few and used often, so they are indexed as intp.
-    return _PairSample(
-        sample.indices[window][active].astype(np.intp),
-        sample.shells[window][active].astype(np.intp),
-        displacements[window][active],
-    )
+    start, axes = 0, range(_DIMENSIONS)
+    if first is not None:
+        # Sorted samples are narrowed to the slab between the first bounds,
+        # which leaves only the other two axes to check.
+        start = int(np.searchsorted(first, lower[0], side="left"))
+        stop = int(np.searchsorted(first, upper[0], side="right"))
+        coordinates = coordinates[start:stop]
+        axes = range(1, _DIMENSIONS)
+    active = np.ones(len(coordinates), dtype=bool)
+    for axis in axes:
+        # Python integer bounds compare without widening int32 coordinates.
+        column = coordinates[:, axis]
+        active &= column >= int(lower[axis])
+        active &= column <= int(upper[axis])
+    return np.flatnonzero(active) + start
 
 
-def _spherical_average(
+def _spherical_average(  # noqa: PLR0913, PLR0917
     density: FloatArray,
     weights: FloatArray,
     pseudodensity: FloatArray,
     samples: Sequence[AtomicSampleLike],
     voxel_volume: float,
+    sampled: FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
     averages = np.zeros_like(weights)
     shell_populations = np.zeros_like(weights)
@@ -172,7 +201,7 @@ def _spherical_average(
         shells = sample.shells
         assigned = density[sample.indices] * weights[atom][shells] * local_inverse
         sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
-        counts = np.bincount(shells, weights=local_inverse > 0, minlength=NSHELLS)
+        counts = occupied_counts(sampled[atom], shells, local_inverse)
         np.divide(sums, counts, out=averages[atom], where=counts > 0)
         shell_populations[atom] = sums * voxel_volume
     return averages, shell_populations
@@ -188,8 +217,9 @@ def _correct_density(  # noqa: PLR0913, PLR0917
     near_nucleus_indices: Sequence[IntArray] | None,
 ) -> _DensityCorrection:
     corrected = density.copy()
+    sampled = shell_counts(samples)
     averages, shell_populations = _spherical_average(
-        corrected, weights, pseudodensity, samples, voxel_volume
+        corrected, weights, pseudodensity, samples, voxel_volume, sampled
     )
     residual = populations - shell_populations.sum(axis=1)
     if near_nucleus_indices is None:
@@ -210,7 +240,7 @@ def _correct_density(  # noqa: PLR0913, PLR0917
                 1.0 - 2.0 * factor * local_density[active] ** 2
             )
         averages, shell_populations = _spherical_average(
-            corrected, weights, pseudodensity, samples, voxel_volume
+            corrected, weights, pseudodensity, samples, voxel_volume, sampled
         )
         if np.sum(np.abs(residual)) < _CHARGE_TOLERANCE:
             break
@@ -254,24 +284,21 @@ def _exchange_vectors(
 
 @lru_cache(maxsize=201)
 def _overlap_estimate_grid(separation: int) -> tuple[IntArray, IntArray, FloatArray]:
-    """Precompute cylindrical quadrature for the original pair screening test."""
-    radial_i: list[int] = []
-    radial_j: list[int] = []
-    measures: list[float] = []
-    for x in range(separation - NSHELLS, NSHELLS + 1):
-        maximum = NSHELLS**2 - max(x**2, (separation - x) ** 2)
-        for height in range(int(np.ceil(np.sqrt(maximum))) + 1):
-            shell_i = int(np.floor(np.hypot(x, height) + 0.5))
-            shell_j = int(np.floor(np.hypot(separation - x, height) + 0.5))
-            if shell_i < NSHELLS and shell_j < NSHELLS:
-                radial_i.append(shell_i)
-                radial_j.append(shell_j)
-                measures.append(4.0 * np.pi * height / SCALE**3)
-    return (
-        np.asarray(radial_i, dtype=np.int64),
-        np.asarray(radial_j, dtype=np.int64),
-        np.asarray(measures, dtype=np.float64),
-    )
+    """Precompute cylindrical quadrature for the original pair screening test.
+
+    Rows run over the axial position and then the height above the axis, the
+    order of the original nested loops, so sums over them keep their order.
+    """
+    axial = np.arange(separation - NSHELLS, NSHELLS + 1)
+    limits = NSHELLS**2 - np.maximum(axial**2, (separation - axial) ** 2)
+    counts = np.ceil(np.sqrt(limits)).astype(np.int64) + 1
+    x = np.repeat(axial, counts)
+    height = np.arange(len(x)) - np.repeat(np.cumsum(counts) - counts, counts)
+    shell_i = np.floor(np.hypot(x, height) + 0.5).astype(np.int64)
+    shell_j = np.floor(np.hypot(separation - x, height) + 0.5).astype(np.int64)
+    keep = (shell_i < NSHELLS) & (shell_j < NSHELLS)
+    measures = 4.0 * np.pi * height[keep] / SCALE**3
+    return shell_i[keep], shell_j[keep], np.asarray(measures, dtype=np.float64)
 
 
 def _significant_pair(  # noqa: PLR0913, PLR0917
@@ -340,65 +367,74 @@ def _candidate_pairs(
             )
 
 
+def _displacement_rows(sample: AtomicSampleLike) -> FloatArray:
+    """A sample's displacements from its atom, one contiguous row per component."""
+    if isinstance(sample, AtomicSample):
+        return sample.displacement_rows()
+    return np.ascontiguousarray(np.transpose(sample.displacements), dtype=np.float64)
+
+
 def _pair_integrals(  # noqa: PLR0913, PLR0917
     atom_i: int,
     atom_j: int,
     separation: FloatArray,
     sample: AtomicSampleLike,
-    density: FloatArray,
-    weights: FloatArray,
-    pseudodensity: FloatArray,
-    vectors: FloatArray,
-    total_vectors: FloatArray,
-    voxel_volume: float,
+    rows: FloatArray,
+    selected: npt.NDArray[np.intp],
+    fields: _PairFields,
 ) -> FloatArray:
-    # Column-wise squares avoid a slow reduction over the length-3 axis.
-    offset = sample.displacements - separation
-    distance_j = np.sqrt(offset[:, 0] ** 2 + offset[:, 1] ** 2 + offset[:, 2] ** 2)
-    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.int64)
-    active = shells_j < NSHELLS
-    points = sample.indices[active]
-    shells_i = sample.shells[active]
-    shells_j = shells_j[active]
-    total = total_vectors[points]
-    denominator = np.sum(total**2, axis=1)
-    local_pseudo = pseudodensity[points]
-    active_density = (denominator > ZERO**2) & (local_pseudo > ZERO)
-    points = points[active_density]
-    shells_i = shells_i[active_density]
-    shells_j = shells_j[active_density]
-    denominator = denominator[active_density]
-    prefactor = 2.0 * voxel_volume * density[points]
-    dot_products = np.sum(vectors[atom_i][shells_i] * vectors[atom_j][shells_j], axis=1)
-    ratio = dot_products / denominator
+    """Integrate one pair over the ``selected`` points of atom i's sample.
+
+    ``rows`` holds the displacements of all of atom i's points, one Cartesian
+    component per row. Each integrand is a point factor times a function of
+    the point's two shells, so the point factors are summed per pair of
+    shells, and those sums are weighted by the shell functions.
+    """
+    dx, dy, dz = (
+        row.take(selected) - offset
+        for row, offset in zip(rows, separation, strict=True)
+    )
+    distance_j = np.sqrt(dx**2 + dy**2 + dz**2)
+    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.intp)
+    inside = shells_j < NSHELLS
+    selected = selected[inside]
+    points = sample.indices.take(selected)
+    shell_pairs = sample.shells.take(selected).astype(np.intp) * NSHELLS
+    shell_pairs += shells_j[inside]
+    sums = [
+        np.bincount(shell_pairs, weights=factor.take(points), minlength=NSHELLS**2)
+        for factor in fields.point_factors
+    ]
+    vectors, weights = fields.vectors, fields.weights
+    # The dot products of the two atoms' exchange vectors, shell by shell.
+    dot_products = np.sum(
+        vectors[atom_i][:, np.newaxis] * vectors[atom_j][np.newaxis], axis=2
+    ).ravel()
+    weight_products = np.multiply.outer(weights[atom_i], weights[atom_j]).ravel()
     integrals = np.asarray(
         [
-            np.sum(prefactor * ratio),
-            np.sum(prefactor * dot_products / total[active_density, 0] ** 2),
-            np.sum(
-                prefactor
-                * weights[atom_i][shells_i]
-                * weights[atom_j][shells_j]
-                / local_pseudo[active_density] ** 2
-            ),
-            (10.0 / 3.0) * np.sum(prefactor * ratio**2),
+            sums[0] @ dot_products,
+            sums[1] @ dot_products,
+            sums[2] @ weight_products,
+            (10.0 / 3.0) * (sums[3] @ dot_products**2),
         ],
         dtype=np.float64,
     )
     return np.maximum(integrals, 0.0)
 
 
-def _summed_exchange(
+def _summed_exchange(  # noqa: PLR0913, PLR0917
     density: FloatArray,
     samples: Sequence[AtomicSampleLike],
     vectors: FloatArray,
     total_vectors: FloatArray,
+    squared_total: FloatArray,
     voxel_volume: float,
 ) -> FloatArray:
     summed = np.zeros(len(samples))
     for atom, sample in enumerate(samples):
         total = total_vectors[sample.indices]
-        denominator = np.sum(total**2, axis=1)
+        denominator = squared_total[sample.indices]
         local = vectors[atom, sample.shells]
         product = np.sum(local * (total - local), axis=1)
         exchange = np.divide(
@@ -526,14 +562,26 @@ def compute_bond_orders(  # noqa: PLR0913
         correction.spherical_average, samples, len(density), spherical_spin
     )
     outside = np.cumsum(correction.shell_populations[:, ::-1], axis=1)[:, ::-1]
+    squared_total = np.sum(total_vectors**2, axis=1)
     summed_exchange = _summed_exchange(
-        correction.density, samples, vectors, total_vectors, voxel_volume
+        correction.density, samples, vectors, total_vectors, squared_total, voxel_volume
+    )
+    fields = _PairFields(
+        weights=weights,
+        vectors=vectors,
+        point_factors=_point_factors(
+            correction.density,
+            pseudodensity,
+            squared_total,
+            total_vectors[:, 0] ** 2,
+            voxel_volume,
+        ),
     )
     first: list[int] = []
     second: list[int] = []
     shifts: list[IntArray] = []
     integral_rows: list[FloatArray] = []
-    displaced_atom, displacements = -1, np.empty((0, 3))
+    displaced_atom, rows = -1, np.empty((_DIMENSIONS, 0))
     for atom_i, atom_j, shift, separation in _candidate_pairs(
         positions, lattice_vectors, periodic
     ):
@@ -551,27 +599,17 @@ def compute_bond_orders(  # noqa: PLR0913
         second.append(atom_j)
         shifts.append(shift)
         sample = samples[atom_i]
-        if domains is not None:
-            # Atomic samples derive their displacements when read, and pairs
-            # come grouped by their first atom: derive them once per atom.
-            if atom_i != displaced_atom:
-                displaced_atom, displacements = atom_i, sample.displacements
-            sample = _shared_domain(
-                domains, atom_i, atom_j, shift, separation, sample, displacements
-            )
+        # Atomic samples derive their displacements when read, and pairs come
+        # grouped by their first atom: derive them once per atom.
+        if atom_i != displaced_atom:
+            displaced_atom, rows = atom_i, _displacement_rows(sample)
+        selected = (
+            np.arange(len(sample.indices))
+            if domains is None
+            else _shared_domain(domains, atom_i, atom_j, shift, separation)
+        )
         integral_rows.append(
-            _pair_integrals(
-                atom_i,
-                atom_j,
-                separation,
-                sample,
-                correction.density,
-                weights,
-                pseudodensity,
-                vectors,
-                total_vectors,
-                voxel_volume,
-            )
+            _pair_integrals(atom_i, atom_j, separation, sample, rows, selected, fields)
         )
     first_atoms = np.asarray(first, dtype=np.int64)
     second_atoms = np.asarray(second, dtype=np.int64)
