@@ -66,6 +66,10 @@ inputs. Each describes an individual optimization step with its own baseline.
 
 ### Fixed
 
+- Complete DDEC3 and DDEC6 analyses when every WFX electron is integrated
+  analytically, retaining charges, multipoles, spin, bonds, and QDR output.
+  Keep spin consistent with corrected core densities and include zero-density
+  nodes in spherical spin averages.
 - Include the periodic image overlaps of diffuse WFX primitives using
   exponent- and coefficient-dependent bounds, avoiding false normalization
   errors from the previous fixed cutoff.

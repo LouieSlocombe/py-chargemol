@@ -145,9 +145,8 @@ def _local_spin_data(
 ) -> list[_LocalSpin]:
     local: list[_LocalSpin] = []
     for atom, sample in enumerate(samples):
-        active = (pseudodensity[sample.indices] > _ZERO) & (
-            density[sample.indices] > _ZERO
-        )
+        supported = pseudodensity[sample.indices] > _ZERO
+        active = supported & (density[sample.indices] > _ZERO)
         points = sample.indices[active]
         shells = sample.shells[active]
         total_density = density[points]
@@ -163,7 +162,10 @@ def _local_spin_data(
                 total_density,
                 local_spin,
                 _theta(assigned_density, fraction * local_spin),
-                np.bincount(shells, minlength=NSHELLS),
+                # Zero-density points contribute zero spin to the same shell
+                # average used for charge; excluding nodal planes here would
+                # artificially increase the spherical spin polarization.
+                np.bincount(sample.shells[supported], minlength=NSHELLS),
             )
         )
     return local

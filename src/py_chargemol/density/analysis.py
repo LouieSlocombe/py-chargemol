@@ -221,15 +221,24 @@ def compute_ddec(
     )
     total_density = grid.density.ravel() + core.density
     partitioner = partition_ddec6 if method == "ddec6" else partition_ddec3
-    partition = partitioner(
-        atomic_numbers=grid.atomic_numbers,
-        density=total_density,
-        samples=samples,
-        pixel_volume=grid.pixel_volume,
-        core_electrons=core_counts,
-        core_population=core.populations,
-        occupancy_correction=occupancy,
-        net_charge=grid.net_charge,
+    core_only = (
+        abs(valence_count) <= ZERO
+        and np.any(core_counts > 0)
+        and not np.any(grid.density)
+    )
+    partition = (
+        _core_only_partition(grid, samples, core)
+        if core_only
+        else partitioner(
+            atomic_numbers=grid.atomic_numbers,
+            density=total_density,
+            samples=samples,
+            pixel_volume=grid.pixel_volume,
+            core_electrons=core_counts,
+            core_population=core.populations,
+            occupancy_correction=occupancy,
+            net_charge=grid.net_charge,
+        )
     )
     dipoles, quadrupoles = _multipoles(grid, samples, total_density, partition, core)
     cloud_a, cloud_b, cloud_r_squared = _cloud_parameters(partition.spherical_average)
@@ -245,13 +254,19 @@ def compute_ddec(
     )
     spin = None
     if compute_spin and grid.spin_density is not None:
-        shape = (-1,) if grid.spin_density.ndim == _DIMENSIONS else (-1, 3)
         correction = (
             None if grid.atomic_corrections is None else grid.atomic_corrections[:, 1]
         )
+        spin_density = grid.spin_density.reshape(
+            (-1,) if grid.spin_density.ndim == _DIMENSIONS else (-1, 3)
+        )
+        if core_only:
+            spin_density, correction = _core_only_spin_inputs(
+                spin_density, correction, core_density, core, samples, grid.pixel_volume
+            )
         spin = partition_spin(
             density=total_density,
-            spin_density=grid.spin_density.reshape(shape),
+            spin_density=spin_density,
             weights=partition.weights,
             pseudodensity=partition.pseudodensity,
             spherical_average=partition.spherical_average,
@@ -317,6 +332,72 @@ def compute_ddec(
             else grid.wavefunction_radial_moments.copy()
         ),
     )
+
+
+def _core_only_partition(
+    grid: DensityGrid, samples: tuple[AtomicSample, ...], core: CoreResult
+) -> PartitionResult:
+    """Use the fixed core populations when no numerical valence remains.
+
+    WFX moves tight explicit-electron products into its analytic core
+    representation. When every product is analytic there is no valence
+    population to normalize, but the core partition still supplies the
+    radial weights needed for multipoles, spin, and bonds.
+    """
+    populations = np.asarray(grid.core_electrons)
+    electrons = float(np.sum(grid.atomic_numbers) - grid.net_charge)
+    charges = grid.atomic_numbers - populations * (electrons / populations.sum())
+    inverse = reciprocal(core.pseudodensity)
+    spherical = np.zeros_like(core.weights)
+    for atom, sample in enumerate(samples):
+        assigned = _assigned(core.weights[atom], core.density, inverse, sample)
+        sums = np.bincount(sample.shells, weights=assigned, minlength=NSHELLS)
+        counts = np.bincount(
+            sample.shells,
+            weights=inverse[sample.indices] > 0,
+            minlength=NSHELLS,
+        )
+        np.divide(sums, counts, out=spherical[atom], where=counts > 0)
+    return PartitionResult(
+        charges=charges,
+        weights=core.weights,
+        pseudodensity=core.pseudodensity,
+        spherical_average=spherical,
+        weighted_spherical_average=spherical.copy(),
+        reference_charges=charges.copy(),
+        hirshfeld_charges=charges.copy(),
+        normalization=1.0,
+        iterations=0,
+    )
+
+
+def _core_only_spin_inputs(  # noqa: PLR0913, PLR0917 -- Core remapping and spin corrections.
+    spin: np.ndarray,
+    correction: np.ndarray | None,
+    raw_density: np.ndarray,
+    core: CoreResult,
+    samples: tuple[AtomicSample, ...],
+    volume: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Remap sampled spin with the core while retaining its analytic integral.
+
+    The original WFX spin correction bridges the sampled and analytic
+    densities. Core population correction changes that sampled density;
+    account for its spin change on each atom before applying that correction.
+    This also keeps the spin fractions within the corrected charge density
+    used for the bond integrals.
+    """
+    raw = raw_density if spin.ndim == 1 else raw_density[:, None]
+    corrected = core.density if spin.ndim == 1 else core.density[:, None]
+    remapped = np.divide(spin, raw, out=np.zeros_like(spin), where=raw > 0) * corrected
+    difference = spin - remapped
+    shape = (len(samples), *spin.shape[1:])
+    adjusted = np.zeros(shape) if correction is None else correction.copy()
+    inverse = reciprocal(core.pseudodensity)
+    for atom, sample in enumerate(samples):
+        fractions = core.weights[atom, sample.shells] * inverse[sample.indices]
+        adjusted[atom] += (fractions @ difference[sample.indices]) * volume
+    return remapped, adjusted
 
 
 def compute_qdr_from_density(
