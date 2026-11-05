@@ -438,12 +438,14 @@ def _assert_pairs_match(
 
 
 @pytest.mark.parametrize("method", ["DDEC6", "DDEC3"])
-def test_nacl_reproduces_the_original_chargemol_calculation(method: str) -> None:
-    # Chargemol prints each to six decimals, and overlaps to ten. DDEC3 takes
-    # about 20 s here: it converges in 101 iterations, DDEC6 in 7.
-    metadata, grid = _density_example("nacl")
+def test_nacl_reproduces_its_complete_sphere_partition(method: str) -> None:
+    # Complete triclinic spheres intentionally differ from the original
+    # Chargemol bounds. Keep that original reference in nacl.json unchanged;
+    # the corrected regression was checked using independently enlarged boxes.
+    _, grid = _density_example("nacl")
     result = compute_ddec(grid, method=method.lower())
-    reference = metadata[method]
+    path = Path(__file__).parent / "density_examples" / "nacl_full_sphere.json"
+    reference = json.loads(path.read_text())[method]
     assert result.method == method.lower()
     assert result.moments is None
     for field in (
@@ -454,7 +456,7 @@ def test_nacl_reproduces_the_original_chargemol_calculation(method: str) -> None
         "cloud_b",
     ):
         np.testing.assert_allclose(
-            getattr(result.analysis, field), reference[field], atol=1e-6, rtol=0
+            getattr(result.analysis, field), reference[field], atol=1e-9, rtol=1e-9
         )
     expected = reference["overlaps"]
     overlaps = result.overlaps
@@ -468,8 +470,8 @@ def test_nacl_reproduces_the_original_chargemol_calculation(method: str) -> None
             expected["translations"],
             expected["populations"],
         ),
-        rtol=0,
-        atol=1e-8,
+        rtol=1e-9,
+        atol=1e-9,
     )
 
 

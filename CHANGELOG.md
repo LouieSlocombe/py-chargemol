@@ -66,6 +66,8 @@ inputs. Each describes an individual optimization step with its own baseline.
 
 ### Fixed
 
+- Include all points within the integration radius on triclinic grids, and
+  include nearby periodic images in skew-cell CM5 and WFX calculations (#15).
 - Accept WFX atoms whose electrons are all in tight Gaussian primitives, such
   as a hydrogen 1s with exponent 6. Analytic core counts that round just above
   the atomic number are now clamped, with the excess retained as an occupancy

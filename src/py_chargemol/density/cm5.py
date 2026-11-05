@@ -6,6 +6,7 @@ from itertools import product
 import numpy as np
 import numpy.typing as npt
 
+from py_chargemol.density.grid import integration_extent
 from py_chargemol.units import BOHR_PER_ANGSTROM
 
 type FloatArray = npt.NDArray[np.float64]
@@ -256,14 +257,9 @@ def _translations(cell: FloatArray, periodic: Sequence[bool]) -> FloatArray:
     if np.any(lengths == 0) or abs(np.linalg.det(cell)) < np.finfo(float).tiny:
         msg = "periodic CM5 requires three nonsingular lattice vectors"
         raise ValueError(msg)
-    cosine = cell @ cell.T / (lengths[:, None] * lengths[None, :])
-    sine = np.sqrt(np.maximum(1 - cosine**2, 0))
-    np.fill_diagonal(sine, np.inf)
     # The original program sums a rectangular set of translated cells whose
     # extent is determined by a 10 angstrom interaction radius.
-    limits = (
-        np.ceil((10 * BOHR_PER_ANGSTROM) / sine.min(axis=1) / lengths).astype(int) + 1
-    )
+    limits = integration_extent(cell, radius=10 * BOHR_PER_ANGSTROM)
     limits *= np.asarray(periodic)
     return np.array(list(product(*(range(-int(n), int(n) + 1) for n in limits)))) @ cell
 

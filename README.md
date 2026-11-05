@@ -342,6 +342,11 @@ Invalid densities, failed partition convergence, and negative valence
 populations raise explicit errors. Quadrupole eigenvalues are computed from
 the complete tensor, including analytic WFX corrections.
 
+Triclinic integration domains use reciprocal-lattice bounds to include the full
+radial cutoff sphere. This corrects omissions in the original angle-based
+bounds; for the bundled NaCl example, DDEC6 and DDEC3 charges differ from the
+original results by about 2.5e-5 e and 7e-6 e, respectively.
+
 Grid validation is not identical to the original executable: the Python API
 permits coarse grids for controlled numerical experiments and does not apply
 all of Chargemol's negative-density rejection thresholds. Electron-count and
@@ -386,7 +391,9 @@ The density engine has separate offline regression fixtures for the original
 VASP NaCl and spin-polarized Gaussian ozone calculations, plus an α-quartz cell
 with py-chargemol reference results. See the
 [density fixture notes](https://github.com/LouieSlocombe/py-chargemol/blob/main/test/density_examples/README.md) for provenance and
-regeneration instructions. Numerical reference cases also cover the
+regeneration instructions. NaCl retains the original Chargemol reference data
+alongside corrected Python results for full-sphere integration. Numerical
+reference cases also cover the
 reference-ion, reshaping, and spin routines.
 During development it was also checked against
 the supplied CP2K water and four Gaussian ozone examples, including charged

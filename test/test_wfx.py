@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from py_chargemol.density.wfx import read_wfx
+from py_chargemol.density.wfx import _geometry, read_wfx
 
 
 def wavefunction(
@@ -192,6 +192,21 @@ def test_oblique_cells_preserve_electron_count(
     electrons = grid.density.sum() * grid.pixel_volume + grid.core_electrons.sum()
     assert electrons == pytest.approx(1, abs=1e-9)
     np.testing.assert_allclose(grid.core_electrons, [1.0 if alpha > 2.5 else 0.0])
+
+
+def test_triclinic_wavefunction_spheres_include_cancelling_grid_vectors() -> None:
+    vectors = 4 * np.array([[1.0, 0, 0], [0, 1.0, 0], [0.8, 0.8, 0.5]])
+    geometry = _geometry(np.zeros((1, 3)), vectors, spacing=0.5)
+    _, points = geometry.points(np.zeros(3), radius=2.0, stride=1)
+    # Grid coordinate (-16, -16, 20) has Cartesian radius 5/3, inside the sphere.
+    assert np.any(np.all(np.isclose(points.T, [0, 0, 5 / 3]), axis=1))
+
+
+def test_triclinic_wavefunction_images_include_nearby_translations() -> None:
+    vectors = 4 * np.array([[1.0, 0, 0], [0, 1.0, 0], [0.8, 0.8, 0.5]])
+    geometry = _geometry(np.zeros((1, 3)), vectors, spacing=0.5)
+    # Translation (-8, -8, 10) is only 20 bohr away, below the 28 bohr cutoff.
+    assert np.any(np.all(np.isclose(geometry.image_shifts(), [0, 0, 20]), axis=1))
 
 
 @pytest.mark.parametrize("spacing", [0, -1, float("nan"), float("inf")])

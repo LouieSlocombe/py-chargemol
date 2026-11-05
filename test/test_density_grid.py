@@ -181,6 +181,17 @@ def test_skew_grid_samples_are_invariant_under_cartesian_rotation() -> None:
     np.testing.assert_allclose(first.displacements @ rotation, second.displacements)
 
 
+def test_triclinic_samples_cover_the_entire_cutoff_sphere() -> None:
+    steps = np.array([[1.0, 0, 0], [0, 1.0, 0], [0.8, 0.8, 0.5]])
+    grid = _grid(steps=steps, periodic=(True, True, True))
+    (sample,) = atomic_samples(grid)
+    # This independent box encloses the sphere, including points obtained by
+    # cancelling the first two vectors against the oblique third vector.
+    coordinates = np.indices((49, 49, 49)).reshape(3, -1).T - 24
+    inside = np.linalg.norm(coordinates @ steps, axis=1) < CUTOFF
+    np.testing.assert_array_equal(sample.coordinates, coordinates[inside])
+
+
 def test_samples_store_narrow_types_and_derive_their_displacements() -> None:
     steps = np.array([[1.1, 0.2, 0], [0, 1.3, 0.3], [0.4, 0, 0.9]])
     grid = _grid(

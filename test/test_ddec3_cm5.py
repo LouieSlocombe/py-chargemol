@@ -171,6 +171,23 @@ def test_equal_elements_have_no_cm5_correction() -> None:
     np.testing.assert_array_equal(charges, [0.3, -0.3])
 
 
+def test_periodic_cm5_is_invariant_under_a_triclinic_basis_change() -> None:
+    arguments: dict[str, Any] = {
+        "atomic_numbers": np.array([1, 8]),
+        "positions": np.array([[1.0, 1.0, 0.0], [3.0, 1.0, 0.0]]),
+        "hirshfeld_charges": np.zeros(2),
+        "periodic": (True, True, True),
+    }
+    cubic = compute_cm5(**arguments, lattice_vectors=4 * np.eye(3))
+    # An integer shear with determinant one describes the same periodic system.
+    skew = compute_cm5(
+        **arguments,
+        lattice_vectors=4 * np.array([[1, 0, 0], [0, 1, 0], [10, 10, 1]]),
+    )
+    # The rectangular image domains retain different exponentially small tails.
+    np.testing.assert_allclose(skew, cubic, rtol=0, atol=1e-9)
+
+
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [

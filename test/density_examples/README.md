@@ -15,8 +15,23 @@ geometry are in atomic units, as returned by the VASP reader.
 The NaCl fixture is derived from the VASP5 NaCl bulk example distributed with
 Chargemol 3.5 (September 26, 2017). [nacl.json](nacl.json) records its geometry,
 core-electron counts, source-file SHA-256 hashes, and reference DDEC6/DDEC3
-results. The tests compare charges, multipoles, fitted tails, and directed
-overlaps with the original reference calculations.
+results. This original reference and the density grids are preserved unchanged.
+
+[nacl_full_sphere.json](nacl_full_sphere.json) records py-chargemol's corrected
+DDEC6/DDEC3 results after issue #15. The original pairwise-angle bounds omitted
+parts of the radial cutoff spheres in this oblique primitive cell. The corrected
+reciprocal-lattice bounds extend 87 grid points along each axis instead of 82.
+Completing the spheres changes the sodium DDEC6 charge from the printed Fortran
+value 0.843200 to 0.843175373862 e, and DDEC3 from 0.966511 to
+0.966518259602 e.
+
+The corrected charges, multipoles, fitted tails, and directed overlaps were
+checked against a separate calculation using fixed, oversized 110-point bounds
+on all three axes for atomic sampling and bond integration. All recorded arrays
+agreed exactly. This check establishes that the corrected bounds include the
+previously omitted samples; it is not an independent external validation of
+the remaining numerical method. The primary regression compares with these
+corrected Python values at relative and absolute tolerances of `1e-9`.
 
 ## Triplet ozone
 

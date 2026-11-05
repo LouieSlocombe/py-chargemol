@@ -362,15 +362,19 @@ def nearest_grid_points(values: np.ndarray) -> npt.NDArray[np.int64]:
     return (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(np.int64)
 
 
-def integration_extent(steps: np.ndarray) -> npt.NDArray[np.int64]:
-    """Return Chargemol's radial integration parallelepiped in grid coordinates."""
-    lengths = np.linalg.norm(steps, axis=1)
-    cosines = steps @ steps.T / np.outer(lengths, lengths)
-    sines = np.sqrt(np.maximum(1.0 - cosines**2, 0.0))
-    np.fill_diagonal(sines, 1.0)
+def integration_extent(
+    steps: np.ndarray, *, radius: float = CUTOFF
+) -> npt.NDArray[np.int64]:
+    """Return a sphere's bounding-box half-widths in grid coordinates.
+
+    Cartesian displacements multiply the inverse voxel matrix on the right.
+    Each column's norm therefore bounds that grid coordinate over the sphere,
+    including when all three voxel vectors are oblique.
+    """
+    reciprocal_lengths = np.linalg.norm(np.linalg.inv(steps), axis=0)
     # Retain the extra voxel on each side for consistent grid quadrature.
     extent: npt.NDArray[np.int64] = (
-        np.ceil(CUTOFF / (sines.min(axis=1) * lengths)).astype(np.int64) + 1
+        np.ceil(radius * reciprocal_lengths).astype(np.int64) + 1
     )
     return extent
 

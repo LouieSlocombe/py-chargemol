@@ -23,6 +23,7 @@ from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
     DensityGrid,
+    integration_extent,
     nearest_grid_points,
 )
 from py_chargemol.density.references import core_reference_density
@@ -378,22 +379,10 @@ class _Geometry:
         return indices[keep], xyz[:, keep]
 
     def image_shifts(self) -> np.ndarray:
-        lengths, sines = _lengths_and_sines(self.lattice)
-        extent = np.ceil(_PERIODIC_CUTOFF / (sines * lengths)).astype(int) + 1
+        extent = integration_extent(self.lattice, radius=_PERIODIC_CUTOFF)
         extent *= np.array(self.periodic)
         images = np.array(list(product(*(range(-n, n + 1) for n in extent))))
         return np.asarray(images @ self.lattice)
-
-
-def _lengths_and_sines(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    lengths = np.linalg.norm(vectors, axis=1)
-    if np.any(lengths == 0) or abs(np.linalg.det(vectors)) < np.finfo(float).tiny:
-        msg = "WFX translation vectors must be nonzero and linearly independent"
-        raise ValueError(msg)
-    cosines = vectors @ vectors.T / np.outer(lengths, lengths)
-    sines = np.sqrt(np.maximum(1 - cosines**2, 0))
-    np.fill_diagonal(sines, 1)
-    return lengths, sines.min(axis=1)
 
 
 def _geometry(
@@ -423,8 +412,10 @@ def _geometry(
             msg = "WFX translation vectors must be linearly independent"
             raise ValueError(msg)
         steps[2] = direction * spacing / np.linalg.norm(direction)
-    lengths, sines = _lengths_and_sines(steps)
-    extent = np.ceil(CUTOFF / (sines * lengths)).astype(int) + 1
+    if abs(np.linalg.det(steps)) < np.finfo(float).tiny:
+        msg = "WFX translation vectors must be nonzero and linearly independent"
+        raise ValueError(msg)
+    extent = integration_extent(steps)
     rounded = nearest_grid_points(positions @ np.linalg.inv(steps))
     shape = (
         24 * np.ceil((rounded.max(axis=0) - rounded.min(axis=0) + 2 * extent + 11) / 24)
