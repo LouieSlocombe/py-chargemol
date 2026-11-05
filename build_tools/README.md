@@ -2,25 +2,27 @@
 
 ## Development
 
-`conda_install.sh` creates or updates the `py-chargemol-dev` environment from
-`environment-dev.yml`. The environment includes uv, prek, Ruff, mypy, and pytest,
-and installs py-chargemol from this checkout in editable mode. Run it from any
-directory:
+With conda installed, [conda_install.sh](conda_install.sh) creates or updates the
+`py-chargemol-dev` environment from [environment-dev.yml](environment-dev.yml).
+The environment includes uv, prek, Ruff, mypy, and pytest, and installs
+py-chargemol from this checkout in editable mode. Run these commands from the
+repository root:
 
 ```bash
 bash build_tools/conda_install.sh
 conda activate py-chargemol-dev
 ```
 
-Rerunning the script updates the environment in place; it does not delete and
-recreate it or prune packages that are absent from the environment file. Set
-`ENV_NAME` to use a different name:
+To run the script from another directory, use its absolute path. Rerunning it
+updates the environment in place; it does not recreate it or prune packages
+that are absent from the environment file. Set `ENV_NAME` to use a different
+name:
 
 ```bash
 ENV_NAME=py-chargemol-test bash build_tools/conda_install.sh
 ```
 
-The development tools run directly inside the environment:
+With the environment active, run the development tools from the repository root:
 
 ```bash
 prek install                # once: run the hooks before each commit
@@ -33,9 +35,9 @@ uv lock                     # after changing dependencies in pyproject.toml
 ## Using the package
 
 Conda is optional: `python -m pip install .` installs the package and NumPy into
-an existing Python 3.14+ environment. `environment.yml` is an alternative for
-creating a conda environment with only the runtime dependencies. Create it,
-then install the package with pip from the repository root:
+an existing Python 3.14+ environment. [environment.yml](environment.yml) creates
+a conda environment with Python, pip, and NumPy. Create it, then install the
+package with pip from the repository root:
 
 ```bash
 conda env create -f build_tools/environment.yml
@@ -48,5 +50,7 @@ analyses and QDR charges itself using bundled reference atomic densities.
 You supply an electron density or wavefunction from an electronic-structure
 calculation. See the [installation requirements](../README.md#installation).
 
-Both conda environments resolve the latest versions that `pyproject.toml`
-allows, not the exact versions pinned in `uv.lock`.
+Conda resolves dependencies from these environment files; it does not use the
+versions pinned in `uv.lock`. Keep their dependency constraints aligned with
+[pyproject.toml](../pyproject.toml). For the locked development environment, use
+the [uv workflow](../README.md#development).

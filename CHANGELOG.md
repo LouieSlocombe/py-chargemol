@@ -2,99 +2,74 @@
 
 ## Unreleased
 
-Faster density analysis and input reading. Results change by less than 2e-11
-on the regression fixtures, mostly by floating-point rounding.
+This release adds QDR and WFX calculation options, speeds up density analysis,
+and reduces memory use. Performance changes preserve the default regression
+results to within about 2e-11; disabling WFX interpolation is a separate,
+opt-in numerical change.
 
-- Add `read_wfx(..., interpolate_diffuse=False)`, which evaluates diffuse
-  Gaussian products directly on the final grid instead of interpolating them
-  from coarser nested grids. It is slower but free of interpolation error,
-  which moves the ozone example's charges by about 2e-4 e. The default still
-  reproduces Chargemol.
-- Add a closed-form QDR solver: `solver="direct"` on every QDR entry point,
-  `--solver direct` on `py-chargemol qdr`, and `--qdr-solver direct` on
-  `py-chargemol analyze`. Each atom's linear systems are the identity plus a
-  matrix of rank at most five, so they are solved exactly with a 5×5 or 3×3
-  system per atom instead of by conjugate gradients. Results agree with the
-  default conjugate gradients to rounding, and `QDRResult.solver` records the
-  choice. The default still reproduces the QDR program's output.
-- Build WFX density grids about 3× faster by evaluating each pair of primitive
-  groups with matrix products instead of a Python loop over primitive pairs.
-- Build WFX density grids about 3× faster again on grids whose voxels lie
-  along x, y and z, which include every molecular WFX grid. Cartesian
-  Gaussian products are separable, so each pair is assembled from
-  one-dimensional factors and added to the grid as one block. Grids with
-  oblique voxels keep the point-by-point evaluation.
-- Solve the DDEC6 tail-reshaping population constraint exactly with Newton
-  steps instead of bisection, in a few evaluations rather than up to 130.
-  Charges move by up to 2e-11, since bisection stopped within 1e-10 of the
-  target population.
-- Parse density blocks in cube, VASP, and XSF files about 5× faster, with the
-  same values and error messages.
-- Speed up DDEC6, DDEC3, core, spin, multipole, bond-order, and CM5 calculations
-  by about 1.5–2×: shared sample gathers, masked instead of compacted arrays,
-  reciprocal pseudodensities, shell-level spin angular functions, and
-  vectorized pair screening.
-- Reduce peak memory by about a quarter. Atomic integration samples store int32
-  grid `coordinates`, which bond integration reuses, in place of the unused
-  image `translations`.
-- Add `compute_spin=False` to `compute_ddec6`, `compute_ddec3` and
-  `compute_ddec`, which skips the spin partition and spin-gradient diagnostics
-  of a spin-polarized grid. The spin partition holds several arrays per sample
-  point and sets the peak memory of a charge-only analysis: skipping it lowers
-  the peak of a VASP α-quartz cell at its own grid from 4.3 to 3.0 GB. Charges
-  and multipoles are unchanged. Bond orders of a spin-polarized density need
-  the spin partition, so `compute_spin=False` requires `compute_bos=False`.
-- Store atomic integration samples in 17 bytes per point instead of 52: int32
-  flat indices (int64 only for grids beyond 2**31 points), uint8 shells and
-  the int32 grid coordinates. Cartesian displacements are derived from the
-  coordinates when read, in the order they were stored in, and bond
-  integration derives each atom's once for all its pairs. Results are
-  bit-identical. On the α-quartz cell the peak falls from 4.3 to 2.7 GB, or
-  from 3.0 to 1.8 GB without the spin partition; the core and DDEC6
-  partitions take 5–10 % longer, bond orders about 4 %.
-- Partition one atom at a time. The core, DDEC6 and DDEC3 partitions no longer
-  keep every atom's gathered density, nor the core partition every atom's
-  assigned density, at once: 16 bytes per sample point in the core partition
-  and 8 in the others. Results are bit-identical. The α-quartz cell's
-  charge-only peak falls from 1.8 to 1.4 GB, now set by building the samples,
-  for a core partition about a quarter slower and DDEC6 and DDEC3 partitions
-  about 15 % slower.
-- Fix `read_wfx` rejecting an atom whose electrons are all in tight primitives,
-  such as a hydrogen 1s with exponent 6. Its analytic core count could round
-  just above the atomic number. Such counts are now clamped, and the excess is
-  kept as an occupancy correction so electrons are conserved.
-- Skip an unused core-density average. Since the core partition rebuilds
-  each atom's assigned density when it corrects the density, the averages
-  it took after every weight update were never read. Results are
-  bit-identical, and the core partition takes 5–15 % less time.
-- Build the cylindrical quadrature of bond-pair screening with array
-  operations instead of nested Python loops, about 80× faster and with
-  the same values. It took up to 3 s of a periodic bond analysis, one
-  table per distinct pair separation.
-- Build atomic integration samples a slab of grid planes at a time instead
-  of broadcasting each atom's whole box of grid points. The samples are
-  bit-identical, and building them is 3–4.5× faster: 1.2 s instead of
-  5.4 s for the α-quartz cell at 96³, whose charge-only peak falls from
-  1.43 to 1.36 GB.
-- Integrate bond pairs with fewer passes over their points: bounds checked
-  per column, points gathered once they are known to lie within both
-  atoms' cutoffs, each atom's displacements kept one component per row,
-  and the integrands' denominators and shell-pair dot products computed
-  once rather than per point. Results are bit-identical. With the faster
-  screening above, the bond analysis of the α-quartz cell at 96³ takes
-  34 s instead of 67 s.
-- Count each atom's sample points per shell once per partition, and in
-  each iteration subtract only the few points without a pseudodensity,
-  instead of counting the others again. Results are bit-identical; the
-  core partition takes 7–21 % less time and the DDEC6 partition 8–28 %,
-  from NaCl to the α-quartz cell at 96³.
-- Integrate each bond pair as sums over pairs of radial shells. Every
-  integrand is a factor of the grid point times a function of its two
-  shells, so the point factors are computed once on the grid, summed per
-  shell pair, and weighted by the shell functions. The bond analysis of
-  the α-quartz cell at 96³ takes 27 s instead of 38 s. Summing in a
-  different order moves overlap populations, contact exchanges and bond
-  orders by at most 9e-16; charges, multipoles and spins are unchanged.
+### Added
+
+- A direct QDR solver. Use `solver="direct"` in the QDR computation APIs,
+  `qdr_solver="direct"` in `write_density_results`, `--solver direct` with
+  `py-chargemol qdr`, or `--qdr-solver direct` with `py-chargemol analyze`.
+  It solves a 5×5 or 3×3 linear system per atom and agrees with converged
+  conjugate gradients to rounding. `QDRResult.solver` records the choice.
+  Conjugate gradients remain the default for compatibility with the original
+  QDR program.
+- `read_wfx(..., interpolate_diffuse=False)` evaluates diffuse Gaussian
+  products directly on the final grid. This is slower but avoids interpolation
+  from coarser grids, changing the ozone example's charges by about 2e-4 e.
+  Interpolation remains enabled by default for compatibility with Chargemol.
+- `compute_spin=False` in `compute_ddec6`, `compute_ddec3`, and `compute_ddec`
+  skips spin partitioning and spin-gradient diagnostics to reduce memory use.
+  Charges and multipoles are unchanged. This option requires
+  `compute_bos=False`, because spin-polarized bond orders need the spin
+  partition.
+
+### Changed
+
+The performance figures below were measured during development on the tested
+inputs. Each describes an individual optimization step with its own baseline.
+
+- Speed up WFX grid construction using matrix products for primitive groups
+  and separable Cartesian Gaussian factors for axis-aligned grids. Each change
+  reduced grid-construction time by about a factor of three in its benchmarks.
+  Oblique grids retain point-by-point evaluation.
+- Parse cube, VASP, and XSF density blocks about five times faster, preserving
+  values and error messages.
+- Replace bisection with Newton steps for the DDEC6 tail-reshaping population
+  constraint. This needs only a few evaluations instead of up to 130. Charges
+  change by up to 2e-11 because the previous solver stopped within 1e-10 of
+  the target population.
+- Reduce repeated array operations in DDEC6, DDEC3, core, spin, multipole,
+  bond-order, and CM5 calculations. Reuse shell counts between iterations and
+  remove unused core-density averages.
+- Reduce atomic integration sample storage from 52 to 17 bytes per point using
+  compact indices, shells, and grid coordinates. Cartesian displacements are
+  reconstructed when needed; flat indices use `int64` for grids beyond `2**31`
+  points. Core, DDEC6, and DDEC3 partitions also process one atom at a time to
+  avoid retaining every atom's gathered density. These changes preserve
+  results bit for bit, with some additional computation during partitioning.
+- Build atomic integration samples in slabs of grid planes, making sample
+  construction 3–4.5 times faster without changing the samples. For the
+  α-quartz cell at 96³, construction took 1.2 s instead of 5.4 s, and the
+  charge-only peak memory after the preceding memory reductions fell from
+  1.43 to 1.36 GB with spin partitioning disabled.
+- Vectorize the cylindrical quadrature used in bond-pair screening and reduce
+  repeated passes over each pair's grid points. Together these changes reduced
+  bond-analysis time for the α-quartz cell at 96³ from 67 to 34 s while
+  preserving results bit for bit.
+- Sum bond integrals over pairs of radial shells. In a separate benchmark,
+  α-quartz bond-analysis time fell from 38 to 27 s. The changed summation
+  order affects overlap populations, contact exchanges, and bond orders by
+  at most 9e-16; charges, multipoles, and spins are unchanged.
+
+### Fixed
+
+- Accept WFX atoms whose electrons are all in tight Gaussian primitives, such
+  as a hydrogen 1s with exponent 6. Analytic core counts that round just above
+  the atomic number are now clamped, with the excess retained as an occupancy
+  correction to conserve electrons.
 
 ## 1.0.0
 
