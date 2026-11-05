@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from py_chargemol import _jit
+from py_chargemol.density._kernels import core_shell_sums
 from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
@@ -156,13 +158,23 @@ def _local_averages(
     averages = np.zeros_like(weights)
     inverse = reciprocal(pseudo)
     for atom, sample in enumerate(samples):
-        local_inverse = inverse[sample.indices]
-        # Widened once: the stored uint8 shells would be cast at every use.
-        shells = sample.shells.astype(np.intp)
-        values = weights[atom][shells] * density[sample.indices] * local_inverse
+        if _jit.ENABLED:
+            values, counts[atom], sums = core_shell_sums(
+                weights[atom],
+                density,
+                inverse,
+                sample.indices,
+                sample.shells,
+                sampled[atom],
+            )
+        else:
+            local_inverse = inverse[sample.indices]
+            # Widened once: the stored uint8 shells would be cast at every use.
+            shells = sample.shells.astype(np.intp)
+            values = weights[atom][shells] * density[sample.indices] * local_inverse
+            counts[atom] = occupied_counts(sampled[atom], shells, local_inverse)
+            sums = np.bincount(shells, weights=values, minlength=NSHELLS)
         totals[atom] = np.sum(values)
-        counts[atom] = occupied_counts(sampled[atom], shells, local_inverse)
-        sums = np.bincount(shells, weights=values, minlength=NSHELLS)
         averages[atom] = np.divide(
             sums, counts[atom], out=np.zeros(NSHELLS), where=counts[atom] > 0
         )

@@ -8,6 +8,8 @@ from typing import Protocol
 import numpy as np
 import numpy.typing as npt
 
+from py_chargemol import _jit
+from py_chargemol.density._kernels import add_radial_weights
 from py_chargemol.units import BOHR_PER_ANGSTROM
 
 NSHELLS = 100
@@ -315,7 +317,10 @@ def sum_radial_weights(
     """Accumulate radial atomic weights, including repeated periodic images."""
     result = np.zeros(size)
     for radial, sample in zip(weights, samples, strict=True):
-        np.add.at(result, sample.indices, radial[sample.shells])
+        if _jit.ENABLED:
+            add_radial_weights(radial, sample.indices, sample.shells, result)
+        else:
+            np.add.at(result, sample.indices, radial[sample.shells])
     return result
 
 

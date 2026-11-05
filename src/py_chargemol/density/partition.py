@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
+from py_chargemol import _jit
+from py_chargemol.density._kernels import partition_shell_sums
 from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
@@ -80,6 +82,21 @@ def _shell_statistics(  # noqa: PLR0913, PLR0917 -- Radial sums of one partition
     inverse = reciprocal(total, threshold)
     # One atom at a time, so no array per sample point outlives its atom.
     for atom, sample in enumerate(samples):
+        if _jit.ENABLED:
+            (
+                points[atom],
+                assigned[atom],
+                weighted_points[atom],
+                weighted_density[atom],
+            ) = partition_shell_sums(
+                weights[atom],
+                density,
+                inverse,
+                sample.indices,
+                sample.shells,
+                counts[atom],
+            )
+            continue
         # Points below the threshold contribute zeros rather than being removed.
         local_inverse = inverse[sample.indices]
         # Widened once: the stored uint8 shells would be cast at every use.
