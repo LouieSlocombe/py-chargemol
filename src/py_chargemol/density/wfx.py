@@ -10,7 +10,7 @@ No wavefunction converter or external executable is needed.
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from itertools import product
 from pathlib import Path
@@ -25,6 +25,7 @@ from py_chargemol.density.grid import (
     DensityGrid,
     integration_extent,
     nearest_grid_points,
+    wrap_periodic_positions,
 )
 from py_chargemol.density.references import core_reference_density
 
@@ -506,6 +507,12 @@ def read_wfx(
     atom_map[real_atoms] = np.arange(np.count_nonzero(real_atoms))
     positions = wave.positions[real_atoms]
     geometry = _geometry(positions, wave.periodic_vectors, grid_spacing)
+    # Pair-image sums use local cell centres; retain the input atom images in
+    # the returned grid so its coordinates and bond translations stay intact.
+    local_positions, _ = wrap_periodic_positions(
+        wave.positions, geometry.lattice, geometry.periodic
+    )
+    wave = replace(wave, positions=local_positions)
     shape = geometry.shape
     strides = _NESTED_STRIDES if interpolate_diffuse else (1,)
     grids = {stride: np.zeros(tuple(shape // stride)) for stride in strides}

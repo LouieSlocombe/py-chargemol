@@ -66,6 +66,8 @@ inputs. Each describes an individual optimization step with its own baseline.
 
 ### Fixed
 
+- Preserve WFX densities for independently shifted periodic atom images,
+  including oblique cells, while retaining the original output coordinates.
 - Honor explicit density formats for extensionless or custom filenames named
   by `job_control.txt` when analyzing a directory.
 - Preserve bond pairs, CM5 charges, and QDR results when periodic atoms are

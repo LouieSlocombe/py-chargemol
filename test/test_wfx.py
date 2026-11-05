@@ -1,6 +1,7 @@
 """Gaussian WFX density quadrature and analytic core correction tests."""
 
 import re
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -167,6 +168,87 @@ def test_periodic_gaussian_images_preserve_electron_count(
         grid.lattice_vectors[:periodic], np.eye(3)[:periodic] * 6
     )
     assert grid.density.sum() * grid.pixel_volume == pytest.approx(1, abs=1e-8)
+
+
+@pytest.mark.parametrize(
+    "vectors",
+    [
+        [[6.0, 3, 0]],
+        [[6.0, 0, 0], [2, 6, 0]],
+        [[6.0, 0, 0], [2, 6, 0], [1, 2, 6]],
+    ],
+)
+@pytest.mark.parametrize("alpha", [0.5, 3.0])
+def test_periodic_wavefunction_preserves_independent_atom_images(
+    tmp_path: Path, vectors: list[list[float]], alpha: float
+) -> None:
+    lattice = np.asarray(vectors)
+    positions = np.array([[0.6, 0.3, 0.2], [1.6, 0.3, 0.2]])
+    images = np.array(list(product(range(-8, 9), repeat=len(lattice)))) @ lattice
+    self_overlap = np.exp(-alpha * np.sum(images**2, axis=1) / 2).sum()
+    cross_overlap = np.exp(
+        -alpha * np.sum((images + positions[1] - positions[0]) ** 2, axis=1) / 2
+    ).sum()
+    # Normalize the symmetric orbital using its full periodic Gaussian overlap.
+    coefficient = (2 * alpha / np.pi) ** 0.75 / np.sqrt(
+        2 * (self_overlap + cross_overlap)
+    )
+    fields = {
+        "Number of Nuclei": "2",
+        "Number of Primitives": "2",
+        "Atomic Numbers": "1 1",
+        "Nuclear Charges": "1 1",
+        "Net Charge": "1",
+        "Primitive Centers": "1 2",
+        "Primitive Exponents": f"{alpha} {alpha}",
+        "Primitive Types": "1 1",
+        "Molecular Orbital Primitive Coefficients": (
+            f"<MO Number>\n1\n</MO Number>\n{coefficient:.16e} {coefficient:.16e}"
+        ),
+    }
+    text = wavefunction(alpha=alpha)
+    for name, value in fields.items():
+        text = re.sub(
+            rf"<{name}>.*?</{name}>",
+            f"<{name}>\n{value}\n</{name}>",
+            text,
+            flags=re.DOTALL,
+        )
+    text += (
+        f"\n<Number of Translation Vectors>\n{len(lattice)}\n"
+        "</Number of Translation Vectors>\n<Translation Vectors>\n"
+        + "\n".join(" ".join(map(str, vector)) for vector in lattice)
+        + "\n</Translation Vectors>"
+    )
+    shifts = np.array([[-9, 12, -7], [11, -8, 9]])[:, : len(lattice)] @ lattice
+    grids = []
+    for index, coordinates in enumerate((positions, positions + shifts)):
+        value = "\n".join(" ".join(map(str, row)) for row in coordinates)
+        source = re.sub(
+            r"<Nuclear Cartesian Coordinates>.*?</Nuclear Cartesian Coordinates>",
+            f"<Nuclear Cartesian Coordinates>\n{value}\n"
+            "</Nuclear Cartesian Coordinates>",
+            text,
+            flags=re.DOTALL,
+        )
+        grid = read_wfx(
+            write(tmp_path / f"images-{index}.wfx", source), grid_spacing=0.5
+        )
+        np.testing.assert_array_equal(grid.positions, coordinates)
+        assert grid.core_electrons is not None
+        electrons = grid.density.sum() * grid.pixel_volume + grid.core_electrons.sum()
+        assert electrons == pytest.approx(1, abs=1e-9)
+        grids.append(grid)
+    for name in (
+        "density",
+        "spin_density",
+        "core_density",
+        "core_electrons",
+        "atomic_corrections",
+    ):
+        np.testing.assert_allclose(
+            getattr(grids[0], name), getattr(grids[1], name), rtol=0, atol=1e-11
+        )
 
 
 @pytest.mark.parametrize(
