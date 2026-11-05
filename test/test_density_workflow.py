@@ -6,7 +6,8 @@ from typing import cast
 import numpy as np
 import pytest
 
-from py_chargemol.ddec6 import StrPath
+from py_chargemol.__main__ import main
+from py_chargemol.ddec6 import StrPath, read_ddec6_net_atomic_charges
 from py_chargemol.density.grid import DensityGrid
 from py_chargemol.density.workflow import (
     DensityFormat,
@@ -228,6 +229,65 @@ def test_named_input_and_ambiguous_auto_discovery(tmp_path: Path) -> None:
         read_density(tmp_path)
     # An explicitly selected source file takes precedence over job-control discovery.
     read_density(tmp_path / "first.cube")
+
+
+@pytest.mark.parametrize("filename", ["density", "density.dat", "selected.cube"])
+@pytest.mark.parametrize("from_control", [False, True])
+def test_explicit_format_reads_named_input_before_conventional_files(
+    tmp_path: Path, filename: str, from_control: bool
+) -> None:
+    write(tmp_path / filename, cube())
+    write(tmp_path / "total_density.cube", cube("8 7 6 5 4 3 2 1"))
+    control = write(
+        tmp_path / "job_control.txt",
+        f"<input filename>{filename}</input filename>",
+    )
+    source = control if from_control else tmp_path
+    grid = read_density(source, format="cube")
+    np.testing.assert_array_equal(grid.density, np.arange(1, 9).reshape(2, 2, 2))
+
+
+def test_named_unknown_format_still_requires_explicit_selection(tmp_path: Path) -> None:
+    write(tmp_path / "density.dat", cube())
+    write(tmp_path / "job_control.txt", "<input filename>density.dat</input filename>")
+    with pytest.raises(ValueError, match="cannot infer density format"):
+        read_density(tmp_path)
+
+
+@pytest.mark.parametrize("filename", ["unselected.XSF", "unselected.wfx", "CHGCAR"])
+def test_explicit_format_skips_named_inputs_of_a_different_known_format(
+    tmp_path: Path, filename: str
+) -> None:
+    write(tmp_path / filename, "input in another format")
+    write(tmp_path / "selected.cube", cube())
+    write(
+        tmp_path / "job_control.txt",
+        f"<input filename>{filename}</input filename>",
+    )
+    grid = read_density(tmp_path, format="cube")
+    np.testing.assert_array_equal(grid.density, np.arange(1, 9).reshape(2, 2, 2))
+
+
+def test_analyze_cli_reads_extensionless_named_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write(
+        tmp_path / "density",
+        "single atom\ntotal density\n1 0 0 0\n"
+        "1 1 0 0\n1 0 1 0\n1 0 0 1\n1 1 0 0 0\n1\n",
+    )
+    write(tmp_path / "job_control.txt", "<input filename>density</input filename>")
+    output = tmp_path / "results"
+    assert (
+        main(
+            ["analyze", str(tmp_path), "--format", "cube", "--output-dir", str(output)]
+        )
+        == 0
+    )
+    assert "Computed DDEC6 for 1 atoms" in capsys.readouterr().out
+    result = read_ddec6_net_atomic_charges(output / "DDEC6_net_atomic_charges.xyz")
+    np.testing.assert_array_equal(result.atomic_numbers, [1])
+    np.testing.assert_allclose(result.net_charges, [0], atol=1e-12)
 
 
 def test_job_control_can_reference_parent_input(tmp_path: Path) -> None:

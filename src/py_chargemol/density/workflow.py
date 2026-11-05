@@ -196,12 +196,14 @@ def _boolean_control(path: Path, tags: dict[str, str], key: str) -> bool | None:
     return _BOOLEANS[values[0].lower()]
 
 
-def _file_format(path: Path) -> str:
+def _file_format(path: Path, *, fallback: str | None = None) -> str:
     if path.name.upper() in _VASP_FILES:
         return "vasp"
     try:
         return _SUFFIXES[path.suffix.lower()]
     except KeyError:
+        if fallback is not None:
+            return fallback
         msg = f"{path}: cannot infer density format; specify cube, xsf, wfx, or vasp"
         raise ValueError(msg) from None
 
@@ -209,7 +211,9 @@ def _file_format(path: Path) -> str:
 def _discover(directory: Path, kind: str, control: JobControl) -> Path:
     if control.input_filename is not None:
         named = directory / control.input_filename
-        if named.is_file() and (kind == "auto" or _file_format(named) == kind):
+        if named.is_file() and (
+            kind == "auto" or _file_format(named, fallback=kind) == kind
+        ):
             return named
         if named.suffix.lower() in _SUFFIXES and not named.exists():
             msg = f"{directory / 'job_control.txt'}: input file does not exist: {named}"
