@@ -15,7 +15,9 @@ from typing import Protocol
 import numpy as np
 import numpy.typing as npt
 
+from py_chargemol import _jit
 from py_chargemol.ddec6 import FloatArray, IntArray, OverlapPairs
+from py_chargemol.density._bond_kernels import pair_shell_sums
 from py_chargemol.density.grid import (
     CUTOFF,
     NSHELLS,
@@ -390,21 +392,35 @@ def _pair_integrals(  # noqa: PLR0913, PLR0917
     the point's two shells, so the point factors are summed per pair of
     shells, and those sums are weighted by the shell functions.
     """
-    dx, dy, dz = (
-        row.take(selected) - offset
-        for row, offset in zip(rows, separation, strict=True)
-    )
-    distance_j = np.sqrt(dx**2 + dy**2 + dz**2)
-    shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.intp)
-    inside = shells_j < NSHELLS
-    selected = selected[inside]
-    points = sample.indices.take(selected)
-    shell_pairs = sample.shells.take(selected).astype(np.intp) * NSHELLS
-    shell_pairs += shells_j[inside]
-    sums = [
-        np.bincount(shell_pairs, weights=factor.take(points), minlength=NSHELLS**2)
-        for factor in fields.point_factors
-    ]
+    sums: np.ndarray | list[np.ndarray]
+    if _jit.ENABLED:
+        sums = pair_shell_sums(
+            separation,
+            sample.indices,
+            sample.shells,
+            rows,
+            selected,
+            fields.point_factors,
+            SCALE,
+            ZERO,
+            NSHELLS,
+        )
+    else:
+        dx, dy, dz = (
+            row.take(selected) - offset
+            for row, offset in zip(rows, separation, strict=True)
+        )
+        distance_j = np.sqrt(dx**2 + dy**2 + dz**2)
+        shells_j = (np.ceil(SCALE * distance_j + ZERO) - 1).astype(np.intp)
+        inside = shells_j < NSHELLS
+        selected = selected[inside]
+        points = sample.indices.take(selected)
+        shell_pairs = sample.shells.take(selected).astype(np.intp) * NSHELLS
+        shell_pairs += shells_j[inside]
+        sums = [
+            np.bincount(shell_pairs, weights=factor.take(points), minlength=NSHELLS**2)
+            for factor in fields.point_factors
+        ]
     vectors, weights = fields.vectors, fields.weights
     # The dot products of the two atoms' exchange vectors, shell by shell.
     dot_products = np.sum(
