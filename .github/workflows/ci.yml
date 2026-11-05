@@ -84,6 +84,33 @@ jobs:
         if: matrix.resolution == 'lowest-direct'
         run: uv run --resolution lowest-direct --no-default-groups --group test pytest --cov
 
+  test-numba:
+    name: Test Numba (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.14", "3.15"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Test with Numba acceleration
+        run: uv run --locked --no-default-groups --group test --extra numba pytest
+
   build:
     name: Build distributions
     runs-on: ubuntu-latest
@@ -115,12 +142,12 @@ jobs:
   all-green:
     name: All checks passed
     if: always()
-    needs: [lint, test, build]
+    needs: [lint, test, test-numba, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
 
     steps:
       - name: Fail if any required job did not succeed
-        if: needs.lint.result != 'success' || needs.test.result != 'success' || needs.build.result != 'success'
+        if: needs.lint.result != 'success' || needs.test.result != 'success' || needs.test-numba.result != 'success' || needs.build.result != 'success'
         run: exit 1

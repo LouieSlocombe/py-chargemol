@@ -38,6 +38,9 @@ dependencies = [
   "numpy>=2.3.3",
 ]
 
+[project.optional-dependencies]
+numba = ["numba>=0.68"]
+
 [project.scripts]
 py-chargemol = "py_chargemol.__main__:main"
 
@@ -67,7 +70,7 @@ source-include = ["CHANGELOG.md", "uv.lock", "test/**", "build_tools/smoke_insta
 [tool.pytest]
 minversion = "9.1"
 # Coverage is opt-in (pytest --cov), so running a subset of the tests or a debugger
-# does not trip fail_under; CI always passes --cov.
+# does not trip fail_under; the NumPy CI matrix passes --cov.
 addopts = ["-ra", "--import-mode=importlib"]
 testpaths = ["test"]
 strict = true

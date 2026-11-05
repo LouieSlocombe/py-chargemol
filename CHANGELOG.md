@@ -9,6 +9,11 @@ opt-in numerical change.
 
 ### Added
 
+- Optional Numba acceleration for core-density averages, DDEC shell statistics,
+  radial-weight accumulation, and bond integration. Install
+  `py-chargemol[numba]` to compile these kernels automatically on first use and
+  cache them for later runs. The default installation retains the NumPy path;
+  `PY_CHARGEMOL_DISABLE_JIT=1` selects it explicitly when Numba is installed.
 - A direct QDR solver. Use `solver="direct"` in the QDR computation APIs,
   `qdr_solver="direct"` in `write_density_results`, `--solver direct` with
   `py-chargemol qdr`, or `--qdr-solver direct` with `py-chargemol analyze`.

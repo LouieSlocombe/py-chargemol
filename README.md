@@ -21,8 +21,8 @@ atoms, use the DDEC6 net atomic charges, which are not resorbed.
 
 ## Installation
 
-Python 3.14 or newer is required. NumPy 2.3.3 or newer is the only runtime
-dependency and is installed automatically by pip.
+Python 3.14 or newer is required. NumPy 2.3.3 or newer is the only required
+runtime dependency and is installed automatically by pip.
 
 Install the latest release from PyPI:
 
@@ -36,6 +36,19 @@ To install from a checkout instead, run this from the repository root:
 ```bash
 python -m pip install .
 ```
+
+For optional JIT acceleration of density partitioning and bond integration,
+install the Numba extra:
+
+```bash
+python -m pip install 'py-chargemol[numba]'
+```
+
+When Numba is installed, these kernels compile automatically on first use and
+cache the compiled code on disk for later runs. The first calculation includes
+compilation overhead; repeated calculations benefit most. The default install
+uses NumPy, including on free-threaded Python builds. To select the NumPy path
+with Numba installed, set `PY_CHARGEMOL_DISABLE_JIT=1` before starting Python.
 
 See [Development](#development) for an editable install and developer tools, and the
 [changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
