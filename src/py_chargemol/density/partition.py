@@ -338,8 +338,8 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
                 )
             weights = np.array(
                 [
-                    tail_decay(row, counts * pixel_volume, first_row, second_row)
-                    for row, counts, first_row, second_row in zip(
+                    tail_decay(row, point_row * pixel_volume, first_row, second_row)
+                    for row, point_row, first_row, second_row in zip(
                         weighted, points, first, second, strict=True
                     )
                 ]
