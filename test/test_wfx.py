@@ -1,13 +1,14 @@
 """Gaussian WFX density quadrature and analytic core correction tests."""
 
 import re
+from collections.abc import Iterator
 from itertools import product
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from py_chargemol.density.wfx import _geometry, read_wfx
+from py_chargemol.density.wfx import _Geometry, _geometry, read_wfx
 
 
 def wavefunction(
@@ -288,7 +289,7 @@ def test_triclinic_wavefunction_images_include_nearby_translations() -> None:
     vectors = 4 * np.array([[1.0, 0, 0], [0, 1.0, 0], [0.8, 0.8, 0.5]])
     geometry = _geometry(np.zeros((1, 3)), vectors, spacing=0.5)
     # Translation (-8, -8, 10) is only 20 bohr away, below the 28 bohr cutoff.
-    assert np.any(np.all(np.isclose(geometry.image_shifts(), [0, 0, 20]), axis=1))
+    assert np.any(np.all(np.isclose(list(geometry.image_shifts()), [0, 0, 20]), axis=1))
 
 
 @pytest.mark.parametrize("spacing", [0, -1, float("nan"), float("inf")])
@@ -537,3 +538,61 @@ def test_diffuse_gaussian_can_be_evaluated_without_interpolation(
     assert direct.density.sum() * direct.pixel_volume == pytest.approx(1, abs=1e-9)
     # The default coarse grid for this exponent sum is linearly interpolated.
     assert np.max(np.abs(nested.density - exact)) > 1e-4
+
+
+@pytest.mark.parametrize("primitive_type", [1, 6])
+def test_diffuse_periodic_orbitals_match_converged_image_sum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, primitive_type: int
+) -> None:
+    alpha = 0.005
+    images = np.arange(-100, 101)
+    overlap = np.exp(-alpha * (6 * images) ** 2 / 2).sum()
+    coefficient = (2 * alpha / np.pi) ** 0.75 / np.sqrt(overlap)
+    if primitive_type == 6:
+        # A Cartesian y² Gaussian is transverse to the periodic x direction;
+        # its fourth Gaussian moment gives this additional normalization.
+        coefficient *= 4 * alpha / np.sqrt(3)
+    source = wavefunction(alpha=alpha, primitive_type=primitive_type, periodic=1)
+    source = re.sub(
+        r"</MO Number>\n[^<]*",
+        f"</MO Number>\n{coefficient:.16e}\n",
+        source,
+    )
+    path = write(tmp_path / "diffuse-periodic.wfx", source)
+    adaptive = read_wfx(path, grid_spacing=0.5)
+
+    def converged_images(
+        geometry: _Geometry, _extent: np.ndarray | None = None
+    ) -> Iterator[np.ndarray]:
+        for image in images:
+            yield image * geometry.lattice[0]
+
+    monkeypatch.setattr(_Geometry, "image_shifts", converged_images)
+    reference = read_wfx(path, grid_spacing=0.5)
+    # Nonperiodic directions still use the finite molecular grid. Compare with
+    # a converged image sum on that same domain, without changing its cutoff.
+    np.testing.assert_allclose(adaptive.density, reference.density, rtol=0, atol=1e-12)
+    assert adaptive.spin_density is not None
+    assert reference.spin_density is not None
+    np.testing.assert_allclose(
+        adaptive.spin_density, reference.spin_density, rtol=0, atol=1e-12
+    )
+
+
+def test_zero_coefficient_periodic_primitive_does_not_change_density(
+    tmp_path: Path,
+) -> None:
+    source = wavefunction(periodic=1)
+    reference = read_wfx(write(tmp_path / "reference.wfx", source), grid_spacing=0.5)
+    source = (
+        source.replace("<Number of Primitives>\n1", "<Number of Primitives>\n2")
+        .replace("<Primitive Centers>\n1", "<Primitive Centers>\n1 1")
+        .replace("<Primitive Exponents>\n0.5", "<Primitive Exponents>\n0.000001 0.5")
+        .replace("<Primitive Types>\n1", "<Primitive Types>\n1 1")
+        .replace("</MO Number>\n", "</MO Number>\n0 ")
+    )
+    grid = read_wfx(write(tmp_path / "inactive.wfx", source), grid_spacing=0.5)
+    np.testing.assert_array_equal(grid.density, reference.density)
+    assert grid.spin_density is not None
+    assert reference.spin_density is not None
+    np.testing.assert_array_equal(grid.spin_density, reference.spin_density)

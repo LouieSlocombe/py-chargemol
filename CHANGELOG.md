@@ -66,6 +66,9 @@ inputs. Each describes an individual optimization step with its own baseline.
 
 ### Fixed
 
+- Include the periodic image overlaps of diffuse WFX primitives using
+  exponent- and coefficient-dependent bounds, avoiding false normalization
+  errors from the previous fixed cutoff.
 - Preserve WFX densities for independently shifted periodic atom images,
   including oblique cells, while retaining the original output coordinates.
 - Honor explicit density formats for extensionless or custom filenames named

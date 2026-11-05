@@ -10,6 +10,7 @@ No wavefunction converter or external executable is needed.
 
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from functools import cached_property
 from itertools import product
@@ -379,11 +380,13 @@ class _Geometry:
         indices = (i[:, None, None] * counts[1] + j[None, :, None]) * counts[2] + k
         return indices[keep], xyz[:, keep]
 
-    def image_shifts(self) -> np.ndarray:
-        extent = integration_extent(self.lattice, radius=_PERIODIC_CUTOFF)
-        extent *= np.array(self.periodic)
-        images = np.array(list(product(*(range(-n, n + 1) for n in extent))))
-        return np.asarray(images @ self.lattice)
+    def image_shifts(self, extent: np.ndarray | None = None) -> Iterator[np.ndarray]:
+        if extent is None:
+            extent = integration_extent(self.lattice, radius=_PERIODIC_CUTOFF)
+            extent *= np.array(self.periodic)
+        lattice = self.lattice
+        for image in product(*(range(-n, n + 1) for n in extent)):
+            yield np.asarray(image) @ lattice
 
 
 def _geometry(
@@ -524,9 +527,12 @@ def read_wfx(
     spin_matrix = wave.coefficients.T @ (
         wave.spin_occupations[:, None] * wave.coefficients
     )
-    groups = list(
-        dict.fromkeys(zip(wave.centers.tolist(), wave.exponents.tolist(), strict=True))
-    )
+    groups = [
+        np.flatnonzero((wave.centers == center) & (wave.exponents == alpha))
+        for center, alpha in dict.fromkeys(
+            zip(wave.centers.tolist(), wave.exponents.tolist(), strict=True)
+        )
+    ]
     construction = _Construction(
         wave,
         geometry,
@@ -541,18 +547,11 @@ def read_wfx(
         nested=interpolate_diffuse,
     )
     integrated = 0.0
-    for shift in geometry.image_shifts():
-        for left_group, (a_center, alpha) in enumerate(groups):
-            left_indices = np.flatnonzero(
-                (wave.centers == a_center) & (wave.exponents == alpha)
-            )
-            for b_center, beta in groups[left_group:]:
-                right_indices = np.flatnonzero(
-                    (wave.centers == b_center) & (wave.exponents == beta)
-                )
-                integrated += construction.accumulate(
-                    left_indices, right_indices, shift
-                )
+    pair_tolerance = _OVERLAP_TOLERANCE / (len(groups) * (len(groups) + 1) / 2)
+    for index, left in enumerate(groups):
+        for right in groups[index:]:
+            for shift in construction.image_shifts(left, right, pair_tolerance):
+                integrated += construction.accumulate(left, right, shift)
     if abs(integrated - wave.occupations.sum()) > _NORMALIZATION_TOLERANCE:
         msg = (
             f"{path}: unnormalized primitive coefficients ({integrated:.8f} electrons)"
@@ -604,6 +603,73 @@ class _Construction:
     spin_matrix: np.ndarray
     atom_map: np.ndarray
     nested: bool
+
+    @cached_property
+    def log_norms(self) -> np.ndarray:
+        """Log L2 norms of monomials times exp(-alpha r²/2), for overlap bounds."""
+        powers = self.wave.powers
+        gamma = np.array(
+            [sum(math.lgamma(float(p) + 0.5) for p in row) for row in powers]
+        )
+        return np.asarray(
+            (gamma - (powers.sum(axis=1) + 1.5) * np.log(self.wave.exponents)) / 2
+        )
+
+    def image_shifts(
+        self, left: np.ndarray, right: np.ndarray, tolerance: float
+    ) -> Iterator[np.ndarray]:
+        """Bound each group's omitted electron and spin sums with enough images."""
+        geometry, wave = self.geometry, self.wave
+        periodic = np.asarray(geometry.periodic)
+        if not np.any(periodic):
+            yield np.zeros(3)
+            return
+        rows, columns = np.meshgrid(left, right, indexing="ij")
+        coefficients = np.maximum(
+            np.abs(self.total_matrix[rows, columns]),
+            np.abs(self.spin_matrix[rows, columns]),
+        ) * np.where(rows == columns, 1, 2)
+        keep = (columns >= rows) & (coefficients > 0)
+        if not np.any(keep):
+            return
+        terms = (
+            np.log(coefficients[keep])
+            + self.log_norms[rows[keep]]
+            + self.log_norms[columns[keep]]
+        )
+        largest = float(terms.max())
+        log_bound = largest + math.log(float(np.exp(terms - largest).sum()))
+        alpha, beta = wave.exponents[left[0]], wave.exponents[right[0]]
+        decay = min(alpha, beta) / (2 * (1 + min(alpha, beta) / max(alpha, beta)))
+        # Splitting the Gaussian product and applying Cauchy-Schwarz bounds
+        # every overlap by its monomial norms times exp(-decay * distance²).
+        reciprocal = np.linalg.inv(geometry.lattice)[:, periodic]
+        lengths = np.linalg.norm(reciprocal, axis=0)
+        directions = reciprocal / lengths
+        gram_bound = np.abs(directions.T @ directions).sum(axis=1).max()
+        gamma = decay / (gram_bound * lengths**2)
+        # The Gram row-sum bound makes the radial Gaussian no larger than
+        # the product of these 1D bounds along periodic fractional axes.
+        full_logs = np.log(3 + np.sqrt(np.pi / gamma))
+        extent = integration_extent(geometry.lattice, radius=_PERIODIC_CUTOFF)
+        extent *= periodic
+        budget = math.log(tolerance / np.count_nonzero(periodic))
+        for index, axis in enumerate(np.flatnonzero(periodic)):
+            other_logs = float(full_logs.sum() - full_logs[index])
+            exponent = float(gamma[index])
+            # Wrapped centres differ by less than one fractional cell. Outside
+            # +/-N the shifted Gaussian tail is at most
+            # 2 exp(-gamma N²) (1 + 1/(2 gamma N)); union over the periodic axes.
+            while (
+                log_bound
+                + math.log(2)
+                - exponent * float(extent[axis]) ** 2
+                + math.log1p(1 / (2 * exponent * extent[axis]))
+                + other_logs
+                > budget
+            ):
+                extent[axis] += 1
+        yield from geometry.image_shifts(extent)
 
     def accumulate(
         self, left: np.ndarray, right: np.ndarray, shift: np.ndarray
