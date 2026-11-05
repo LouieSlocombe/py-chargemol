@@ -175,7 +175,31 @@ class _Sections:
         return values.astype(np.int64)
 
 
-def _read_wavefunction(path: StrPath) -> _Wavefunction:  # noqa: PLR0915 -- WFX sections are read and validated together.
+def _orbital_coefficients(
+    text: str, norbitals: int, nprimitives: int, path: StrPath
+) -> np.ndarray:
+    """Read one finite primitive-coefficient block for each molecular orbital."""
+    matches = re.findall(
+        r"<MO Number>\s*(\d+)\s*</MO Number>\s*([^<]*)", text, re.IGNORECASE
+    )
+    if len(matches) != norbitals or {int(m[0]) for m in matches} != set(
+        range(1, norbitals + 1)
+    ):
+        msg = f"{path}: expected one coefficient block per molecular orbital"
+        raise ValueError(msg)
+    coefficients = np.empty((norbitals, nprimitives))
+    for number, values in matches:
+        array = np.array(
+            [float(v.replace("D", "E").replace("d", "e")) for v in values.split()]
+        )
+        if len(array) != nprimitives or not np.all(np.isfinite(array)):
+            msg = f"{path}: invalid primitive coefficients for MO {number}"
+            raise ValueError(msg)
+        coefficients[int(number) - 1] = array
+    return coefficients
+
+
+def _read_wavefunction(path: StrPath) -> _Wavefunction:
     source = Path(path)
     data = _Sections(source, source.read_text(encoding="utf-8"))
     if data.get("Keywords").strip().upper() != "GTO":
@@ -214,24 +238,12 @@ def _read_wavefunction(path: StrPath) -> _Wavefunction:  # noqa: PLR0915 -- WFX 
     spin = occupations * np.array(
         [1 if v == "alpha" else -1 if v == "beta" else 0 for v in spin_types]
     )
-    raw = data.get("Molecular Orbital Primitive Coefficients")
-    matches = re.findall(
-        r"<MO Number>\s*(\d+)\s*</MO Number>\s*([^<]*)", raw, re.IGNORECASE
+    coefficients = _orbital_coefficients(
+        data.get("Molecular Orbital Primitive Coefficients"),
+        norbitals,
+        nprimitives,
+        path,
     )
-    if len(matches) != norbitals or {int(m[0]) for m in matches} != set(
-        range(1, norbitals + 1)
-    ):
-        msg = f"{path}: expected one coefficient block per molecular orbital"
-        raise ValueError(msg)
-    coefficients = np.empty((norbitals, nprimitives))
-    for number, values in matches:
-        array = np.array(
-            [float(v.replace("D", "E").replace("d", "e")) for v in values.split()]
-        )
-        if len(array) != nprimitives or not np.all(np.isfinite(array)):
-            msg = f"{path}: invalid primitive coefficients for MO {number}"
-            raise ValueError(msg)
-        coefficients[int(number) - 1] = array
     net_charge = float(data.numbers("Net Charge", 1)[0])
     if (
         np.any(occupations < 0)
@@ -248,21 +260,21 @@ def _read_wavefunction(path: StrPath) -> _Wavefunction:  # noqa: PLR0915 -- WFX 
     _validate_primitives(edf_centers, edf_exponents, edf_types, natoms, path)
     order = np.lexsort((exponents, centers))
     return _Wavefunction(
-        numbers,
-        nuclear,
-        positions,
-        centers[order],
-        exponents[order],
-        _POWERS[types[order] - 1],
-        coefficients[:, order],
-        occupations,
-        spin,
-        net_charge,
-        edf_centers,
-        edf_exponents,
-        _POWERS[edf_types - 1],
-        edf_coefficients,
-        periodic_vectors,
+        numbers=numbers,
+        nuclear_charges=nuclear,
+        positions=positions,
+        centers=centers[order],
+        exponents=exponents[order],
+        powers=_POWERS[types[order] - 1],
+        coefficients=coefficients[:, order],
+        occupations=occupations,
+        spin_occupations=spin,
+        net_charge=net_charge,
+        edf_centers=edf_centers,
+        edf_exponents=edf_exponents,
+        edf_powers=_POWERS[edf_types - 1],
+        edf_coefficients=edf_coefficients,
+        periodic_vectors=periodic_vectors,
     )
 
 

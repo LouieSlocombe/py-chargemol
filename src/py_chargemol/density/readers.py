@@ -15,8 +15,13 @@ import numpy as np
 import numpy.typing as npt
 
 from py_chargemol.ddec6 import StrPath
-from py_chargemol.density.core import sum_radial_weights
-from py_chargemol.density.grid import NSHELLS, ZERO, DensityGrid, atomic_samples
+from py_chargemol.density.grid import (
+    NSHELLS,
+    ZERO,
+    DensityGrid,
+    atomic_samples,
+    sum_radial_weights,
+)
 from py_chargemol.density.references import core_reference_density
 from py_chargemol.elements import symbol_to_number
 from py_chargemol.units import BOHR_PER_ANGSTROM

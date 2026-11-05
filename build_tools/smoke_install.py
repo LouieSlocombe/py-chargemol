@@ -16,7 +16,7 @@ def main() -> None:
         msg = "installed package is missing its atomic reference densities"
         raise RuntimeError(msg)
     analysis = compute_ddec6(_molecular_grid())
-    if analysis.bonds is None or not np.all(analysis.bonds.bond_orders > 0):
+    if not np.all(analysis.bonds.bond_orders > 0):
         msg = "installed package did not compute the molecular bond orders"
         raise RuntimeError(msg)
     result = analysis.compute_qdr()

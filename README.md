@@ -58,6 +58,9 @@ Choose an entry point for the data you already have:
 | Existing Chargemol output files | [`calculate_qdr`](#compute-qdr-from-chargemol-output) | `py-chargemol qdr` |
 | DDEC6 arrays in memory | [`compute_qdr_from_arrays`](#compute-directly-from-arrays) | — |
 
+<details>
+<summary><strong>Electron-density analysis: Python, command line, and supported inputs</strong></summary>
+
 ### Compute directly from an electron density
 
 For a VASP calculation:
@@ -166,6 +169,11 @@ During analysis, the density integral is checked against the expected electron
 count. A discrepancy beyond the allowed tolerance raises an error; check the
 charge, units, core counts, and grid resolution.
 
+</details>
+
+<details>
+<summary><strong>QDR from Chargemol output: Python, command line, and output files</strong></summary>
+
 ### Compute QDR from Chargemol output
 
 Read existing Chargemol output and return the computed arrays without writing
@@ -218,6 +226,77 @@ about the centre of mass at three levels: `charges` (point charges alone),
 `dipole_magnitude`, `quadrupole`, `quadrupole_tensor`, and
 `quadrupole_eigenvalues`. For periodic systems, `result.moments` is `None`.
 
+#### Work with parsed analysis objects
+
+The readers, `DDEC6Analysis`, `OverlapPairs`, and pure `compute_qdr_charges`
+function are also available from the package root:
+
+```python
+from py_chargemol import (
+    DDEC6Analysis,
+    OverlapPairs,
+    compute_qdr_charges,
+    read_ddec6_net_atomic_charges,
+    read_overlap_populations,
+)
+
+analysis: DDEC6Analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
+pairs: OverlapPairs = read_overlap_populations(
+    "overlap_populations_and_contact_exchanges.txt"
+)
+result = compute_qdr_charges(analysis, pairs)
+```
+
+The readers convert Chargemol coordinates to bohr and pair indices to zero-based
+indices. `compute_qdr_charges` returns the same `QDRResult`, including molecular
+moments for nonperiodic systems, without writing files.
+
+#### Write QDR output files
+
+Use `run_qdr` when you want to compute and write
+`QDR-DDEC6_point_charges.xyz`:
+
+```python
+from py_chargemol import run_qdr
+
+result = run_qdr("path/to/chargemol/output")
+```
+
+Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
+logging to capture it; the command-line interface creates the log file
+automatically. For a single atom, `run_qdr` returns `None` without writing a
+charge file; use `calculate_qdr` if you need its arrays.
+
+#### Command line
+
+Run `py-chargemol qdr` in the directory that holds the Chargemol output, or pass
+the directory:
+
+```bash
+py-chargemol qdr path/to/chargemol/output
+```
+
+For systems with more than one atom, the command writes two files to that
+directory:
+
+- `QDR-DDEC6_point_charges.xyz`: the QDR point charges as an XYZ file Jmol can
+  read, followed by the residual atomic dipoles and quadrupoles, the electron
+  cloud parameters, and, for molecules, the total dipole and quadrupole moments.
+- `QDR_charges_computation_logfile.txt`: a log of the run.
+
+`--charges`, `--overlaps`, `--output`, and `--log` choose other files; explicit
+paths are relative to the working directory. Existing output and log files are
+overwritten. For a single atom, only the log is written.
+`--solver direct` solves the reduced linear systems instead of using
+conjugate gradients, and the output file says so in place of the iteration
+count; `py-chargemol analyze` takes the same choice as `--qdr-solver`. See
+`py-chargemol qdr --help`.
+
+</details>
+
+<details>
+<summary><strong>QDR from arrays: examples and argument reference</strong></summary>
+
 ### Compute directly from arrays
 
 `compute_qdr_from_arrays` accepts Python lists or NumPy arrays, so an in-memory
@@ -267,73 +346,14 @@ This array API performs QDR resorption using supplied DDEC6 results. Use
 `compute_ddec6` to generate those results from an electron density. The synthetic
 values above illustrate the API, not a physical DDEC6 analysis.
 
-### Work with parsed analysis objects
+</details>
 
-The readers, `DDEC6Analysis`, `OverlapPairs`, and pure `compute_qdr_charges`
-function are also available from the package root:
+## Project information
 
-```python
-from py_chargemol import (
-    DDEC6Analysis,
-    OverlapPairs,
-    compute_qdr_charges,
-    read_ddec6_net_atomic_charges,
-    read_overlap_populations,
-)
+<details>
+<summary><strong>Compatibility and reference fixtures</strong></summary>
 
-analysis: DDEC6Analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
-pairs: OverlapPairs = read_overlap_populations(
-    "overlap_populations_and_contact_exchanges.txt"
-)
-result = compute_qdr_charges(analysis, pairs)
-```
-
-The readers convert Chargemol coordinates to bohr and pair indices to zero-based
-indices. `compute_qdr_charges` returns the same `QDRResult`, including molecular
-moments for nonperiodic systems, without writing files.
-
-### Write QDR output files
-
-Use `run_qdr` when you want to compute and write
-`QDR-DDEC6_point_charges.xyz`:
-
-```python
-from py_chargemol import run_qdr
-
-result = run_qdr("path/to/chargemol/output")
-```
-
-Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
-logging to capture it; the command-line interface creates the log file
-automatically. For a single atom, `run_qdr` returns `None` without writing a
-charge file; use `calculate_qdr` if you need its arrays.
-
-### Command line
-
-Run `py-chargemol qdr` in the directory that holds the Chargemol output, or pass
-the directory:
-
-```bash
-py-chargemol qdr path/to/chargemol/output
-```
-
-For systems with more than one atom, the command writes two files to that
-directory:
-
-- `QDR-DDEC6_point_charges.xyz`: the QDR point charges as an XYZ file Jmol can
-  read, followed by the residual atomic dipoles and quadrupoles, the electron
-  cloud parameters, and, for molecules, the total dipole and quadrupole moments.
-- `QDR_charges_computation_logfile.txt`: a log of the run.
-
-`--charges`, `--overlaps`, `--output`, and `--log` choose other files; explicit
-paths are relative to the working directory. Existing output and log files are
-overwritten. For a single atom, only the log is written.
-`--solver direct` solves the reduced linear systems instead of using
-conjugate gradients, and the output file says so in place of the iteration
-count; `py-chargemol analyze` takes the same choice as `--qdr-solver`. See
-`py-chargemol qdr --help`.
-
-## Compatibility with the original programs
+### Compatibility with the original programs
 
 The density engine is based on the September 2017 Chargemol program. Output
 files retain the scientific quantities and familiar table layouts, while
@@ -379,7 +399,7 @@ details differ:
   the same information in a different layout, and the XYZ output always uses
   LF line endings.
 
-## Reference fixtures
+### Reference fixtures
 
 `test/worked_examples/` holds the Chargemol inputs and reference QDR charge
 outputs from the six worked examples distributed with T. A. Manz's April 9,
@@ -405,25 +425,12 @@ resolution are stored byte-for-byte in compressed, per-element package
 archives. A SHA-256 manifest records their provenance. The installed wheel
 includes these resources.
 
-## Citation
+</details>
 
-Publications using these analyses must cite the original methods, as the
-licenses require. For DDEC, bond-order, and spin calculations, cite the methods
-listed in
-[LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL),
-including the DDEC6 papers by T. A. Manz and N. Gabaldon Limas and the
-Chargemol 3.5 program. For QDR charges, cite:
+<details>
+<summary><strong>Development and project layout</strong></summary>
 
-- A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
-  charges reproduce the electrostatic potential surrounding a material across
-  multiple geometric conformations?", RSC Advances, Vol. 15 (2025) 23223-23265,
-  [doi:10.1039/D4RA07900K](https://doi.org/10.1039/D4RA07900K).
-- T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net.
-
-The output file keeps the Fortran program's citation text, which predates the
-paper's publication.
-
-## Development
+### Development
 
 Clone the repository and enter its directory:
 
@@ -477,7 +484,7 @@ uv run --locked ruff format .
 In the conda environment, run the same tools without the `uv run --locked`
 prefix.
 
-### Dependencies
+#### Dependencies
 
 `pyproject.toml` declares the oldest versions the package supports and
 `uv.lock` pins the exact versions used in development and CI. CI also tests
@@ -487,7 +494,7 @@ conda environment files in `build_tools/` alongside `pyproject.toml`.
 Dependabot refreshes `uv.lock`, the pre-commit hooks, and the GitHub Actions
 once a month, grouping each into a single pull request.
 
-### Continuous integration
+#### Continuous integration
 
 Every push to `main` and every pull request runs the hooks and mypy, tests on
 Linux, macOS, and Windows with Python 3.14 and 3.15, tests the
@@ -501,12 +508,12 @@ GitHub release is published. Follow the
 for preparation and publishing steps. Check that the license allows the
 distribution first.
 
-## Project layout
+### Project layout
 
 ```text
 .
 ├── .github/                    # CI, PyPI release, and Dependabot
-├── build_tools/                # conda environments and install script
+├── build_tools/                # conda environments, installer and package smoke test
 ├── src/py_chargemol/
 │   ├── ddec6.py                # readers for Chargemol's DDEC6 output
 │   ├── elements.py             # element symbols and atomic weights
@@ -514,13 +521,21 @@ distribution first.
 │   ├── units.py                # unit conversions
 │   ├── __main__.py             # the py-chargemol command
 │   ├── density/                # independent density-to-DDEC calculations
+│   │   ├── analysis.py         # density-analysis APIs and result objects
+│   │   ├── workflow.py         # input discovery and job_control.txt settings
+│   │   ├── grid.py             # density grids and atomic integration samples
 │   │   ├── readers.py          # cube, VASP and XSF density input
 │   │   ├── wfx.py              # wavefunctions and analytic Gaussian integrals
+│   │   ├── core.py             # core partitioning and integration corrections
+│   │   ├── references.py       # reference-ion and core-density lookup
 │   │   ├── partition.py        # DDEC6 partitioning and radial constraints
 │   │   ├── ddec3.py            # DDEC3 partitioning
+│   │   ├── reshaping.py        # radial-density tail constraints
 │   │   ├── cm5.py              # Hirshfeld-to-CM5 charge correction
 │   │   ├── bonds.py            # overlaps, contact exchanges and bond orders
 │   │   ├── spin.py             # collinear and noncollinear spin partitioning
+│   │   ├── diagnostics.py      # noncollinear spin-gradient diagnostics
+│   │   ├── output.py           # density-analysis output files
 │   │   └── data/               # bundled reference-ion and core densities
 │   └── qdr/
 │       ├── arrays.py           # direct computation from Python and NumPy arrays
@@ -528,6 +543,7 @@ distribution first.
 │       ├── output.py           # QDR-DDEC6_point_charges.xyz writer
 │       └── run.py              # calculate_qdr and the legacy run_qdr writer
 ├── test/                       # unit and worked-example regression tests
+│   ├── density_examples/       # density fixtures and provenance notes
 │   └── worked_examples/        # unmodified reference inputs and QDR outputs
 ├── CHANGELOG.md                # release notes
 ├── RELEASE.md                  # release preparation and publishing
@@ -535,12 +551,37 @@ distribution first.
 └── uv.lock                     # pinned development dependencies
 ```
 
-## License
+</details>
+
+<details>
+<summary><strong>Citation and license</strong></summary>
+
+### Citation
+
+Publications using these analyses must cite the original methods, as the
+licenses require. For DDEC, bond-order, and spin calculations, cite the methods
+listed in
+[LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL),
+including the DDEC6 papers by T. A. Manz and N. Gabaldon Limas and the
+Chargemol 3.5 program. For QDR charges, cite:
+
+- A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
+  charges reproduce the electrostatic potential surrounding a material across
+  multiple geometric conformations?", RSC Advances, Vol. 15 (2025) 23223-23265,
+  [doi:10.1039/D4RA07900K](https://doi.org/10.1039/D4RA07900K).
+- T. A. Manz, InteractionModels program, 2025 version, ddec.sourceforge.net.
+
+The output file keeps the Fortran program's citation text, which predates the
+paper's publication.
+
+### License
 
 The QDR implementation retains the original terms, which
 [LICENSE](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE)
 reproduces. The density-analysis implementation and reference data retain
 Chargemol's terms in
 [LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL).
-Both require
-attribution and citation of the original methods in published results.
+Both require attribution and citation of the original methods in published
+results.
+
+</details>

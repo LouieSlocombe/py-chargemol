@@ -32,6 +32,17 @@ pytest --cov                # --cov enforces 100% coverage; omit it for a subset
 uv lock                     # after changing dependencies in pyproject.toml
 ```
 
+Source edits take effect immediately in an editable install. After changing
+package metadata such as the version in `pyproject.toml`, refresh the installed
+metadata from the repository root:
+
+```bash
+python -m pip install --no-deps -e .
+```
+
+For dependency changes, rerun `conda_install.sh` after updating the environment
+file so conda also resolves the new requirements.
+
 ## Using the package
 
 Conda is optional: `python -m pip install .` installs the package and NumPy into
