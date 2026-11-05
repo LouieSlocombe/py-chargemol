@@ -28,6 +28,7 @@ from py_chargemol.density.grid import (
     occupied_counts,
     reciprocal,
     shell_counts,
+    wrap_periodic_positions,
 )
 
 _CHARGE_TOLERANCE = 1e-5
@@ -346,6 +347,7 @@ def _candidate_pairs(
         limits = np.where(
             periodic, np.ceil(2.0 * CUTOFF * np.linalg.norm(inverse, axis=0)) + 1, 0
         ).astype(np.int64)
+    wrapped, images = wrap_periodic_positions(positions, lattice_vectors, periodic)
     translations = np.array(
         list(itertools.product(*(range(-k, k + 1) for k in limits))), dtype=np.int64
     )
@@ -353,16 +355,14 @@ def _candidate_pairs(
     positive = np.array([tuple(shift) > (0, 0, 0) for shift in translations.tolist()])
     offsets = translations @ lattice_vectors
     for atom_i in range(len(positions)):
-        separations = (
-            positions[atom_i:, None, :] + offsets[None, :, :] - positions[atom_i]
-        )
+        separations = wrapped[atom_i:, None, :] + offsets[None, :, :] - wrapped[atom_i]
         within = np.linalg.norm(separations, axis=2) <= 2.0 * CUTOFF
         within[0] &= positive
         for other, image in zip(*np.nonzero(within), strict=True):
             yield (
                 atom_i,
                 atom_i + int(other),
-                translations[image],
+                translations[image] + images[atom_i] - images[atom_i + int(other)],
                 separations[other, image],
             )
 

@@ -188,6 +188,40 @@ def test_periodic_cm5_is_invariant_under_a_triclinic_basis_change() -> None:
     np.testing.assert_allclose(skew, cubic, rtol=0, atol=1e-9)
 
 
+@pytest.mark.parametrize("periodic", [(True, True, True), (True, False, True)])
+def test_cm5_is_invariant_under_independent_atom_images(
+    periodic: tuple[bool, bool, bool],
+) -> None:
+    cell = np.array([[7.0, 0, 0], [1.2, 6.6, 0], [0.7, 0.9, 7.3]])
+    positions = np.array([[1.0, 1.4, 0.6], [2.6, 1.1, 0.9]])
+    images = np.array([[10, -8, 6], [-9, 7, -5]]) * periodic
+    unwrapped = positions + images @ cell
+    arguments: dict[str, Any] = {
+        "atomic_numbers": np.array([1, 8]),
+        "hirshfeld_charges": np.array([0.2, -0.2]),
+        "lattice_vectors": cell,
+        "periodic": periodic,
+    }
+    expected = compute_cm5(positions=positions, **arguments)
+    actual = compute_cm5(positions=unwrapped, **arguments)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-12)
+    np.testing.assert_array_equal(unwrapped, positions + images @ cell)
+
+
+def test_cm5_keeps_nonperiodic_atom_separations() -> None:
+    cell = np.diag([7.0, 8.0, 9.0])
+    # The y separation spans ten cell vectors, but y is not periodic.
+    charges = np.array([0.2, -0.2])
+    actual = compute_cm5(
+        atomic_numbers=np.array([1, 8]),
+        positions=np.array([[1.0, 1.0, 1.0], [2.0, 81.0, 1.0]]),
+        hirshfeld_charges=charges,
+        lattice_vectors=cell,
+        periodic=(True, False, True),
+    )
+    np.testing.assert_allclose(actual, charges, rtol=0, atol=1e-12)
+
+
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [

@@ -203,3 +203,46 @@ def test_results_follow_their_atoms_through_a_reordering(
         core_electrons=water_cell.core_electrons[order],
     )
     _assert_transformed(compute_ddec6(reordered), reference, order=order)
+
+
+def test_independent_periodic_images_preserve_bonds_and_qdr(
+    water_cell: DensityGrid, reference: DDECResult
+) -> None:
+    images = np.array([[10, -8, 6], [-9, 7, -5], [4, -3, 11]])
+    positions = water_cell.positions + images @ water_cell.lattice_vectors
+    unwrapped = replace(water_cell, positions=positions)
+    result = compute_ddec6(unwrapped)
+    _assert_transformed(result, reference)
+    np.testing.assert_array_equal(result.analysis.positions, positions)
+    np.testing.assert_array_equal(unwrapped.positions, positions)
+    original_pairs, pairs = reference.overlaps, result.overlaps
+    np.testing.assert_array_equal(pairs.atom1, original_pairs.atom1)
+    np.testing.assert_array_equal(pairs.atom2, original_pairs.atom2)
+    np.testing.assert_array_equal(
+        pairs.translations,
+        original_pairs.translations + images[pairs.atom1] - images[pairs.atom2],
+    )
+    np.testing.assert_allclose(
+        positions[pairs.atom2]
+        + pairs.translations @ water_cell.lattice_vectors
+        - positions[pairs.atom1],
+        water_cell.positions[original_pairs.atom2]
+        + original_pairs.translations @ water_cell.lattice_vectors
+        - water_cell.positions[original_pairs.atom1],
+        rtol=0,
+        atol=TOLERANCE,
+    )
+    for actual, expected in (
+        (pairs.populations, original_pairs.populations),
+        (result.bonds.bond_orders, reference.bonds.bond_orders),
+        (result.bonds.contact_exchanges, reference.bonds.contact_exchanges),
+        (result.bonds.spin_polarization_terms, reference.bonds.spin_polarization_terms),
+    ):
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=TOLERANCE)
+    actual_qdr, expected_qdr = result.compute_qdr(), reference.compute_qdr()
+    for actual, expected in (
+        (actual_qdr.charges, expected_qdr.charges),
+        (actual_qdr.atomic_dipoles, expected_qdr.atomic_dipoles),
+        (actual_qdr.atomic_quadrupoles, expected_qdr.atomic_quadrupoles),
+    ):
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=TOLERANCE)

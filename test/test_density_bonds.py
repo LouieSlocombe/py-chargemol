@@ -12,6 +12,7 @@ from py_chargemol.ddec6 import FloatArray, IntArray
 from py_chargemol.density.analysis import compute_ddec6
 from py_chargemol.density.bonds import (
     BondOrderResult,
+    _candidate_pairs,
     _overlap_estimate_grid,
     compute_bond_orders,
 )
@@ -515,3 +516,40 @@ def test_spin_invalid_inputs_are_rejected(molecule: Inputs) -> None:
     arguments["occupancy_correction"] = np.zeros((1, 3))
     with pytest.raises(ValueError, match="occupancy_correction"):
         partition_spin(**arguments)
+
+
+def test_pair_images_preserve_unwrapped_partial_periodic_geometry() -> None:
+    lattice = np.array([[7.0, 0.0, 0.0], [1.2, 6.6, 0.0], [0.7, 0.9, 7.3]])
+    positions = np.array([[1.0, 1.4, 0.6], [2.6, 1.1, 0.9]])
+    periodic = (True, False, True)
+    images = np.array([[10, 0, -8], [-9, 0, 7]])
+    unwrapped = positions + images @ lattice
+    reference = list(_candidate_pairs(positions, lattice, periodic))
+    translated = list(_candidate_pairs(unwrapped, lattice, periodic))
+    assert any(first != second for first, second, _, _ in reference)
+    assert len(translated) == len(reference)
+    for actual, expected in zip(translated, reference, strict=True):
+        first, second, translation, separation = actual
+        expected_first, expected_second, expected_translation, expected_separation = (
+            expected
+        )
+        assert (first, second) == (expected_first, expected_second)
+        np.testing.assert_array_equal(
+            translation, expected_translation + images[first] - images[second]
+        )
+        assert translation[1] == 0
+        np.testing.assert_allclose(separation, expected_separation, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(
+            unwrapped[second] + translation @ lattice - unwrapped[first],
+            expected_separation,
+            rtol=0,
+            atol=1e-12,
+        )
+    # Moving along the nonperiodic cell vector physically separates the atoms.
+    separated = unwrapped.copy()
+    separated[1] += 10 * lattice[1]
+    assert all(
+        first == second
+        for first, second, _, _ in _candidate_pairs(separated, lattice, periodic)
+    )
+    np.testing.assert_array_equal(unwrapped, positions + images @ lattice)

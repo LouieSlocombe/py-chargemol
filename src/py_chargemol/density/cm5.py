@@ -6,7 +6,7 @@ from itertools import product
 import numpy as np
 import numpy.typing as npt
 
-from py_chargemol.density.grid import integration_extent
+from py_chargemol.density.grid import integration_extent, wrap_periodic_positions
 from py_chargemol.units import BOHR_PER_ANGSTROM
 
 type FloatArray = npt.NDArray[np.float64]
@@ -310,6 +310,7 @@ def compute_cm5(
         msg = "lattice_vectors must be a finite 3 by 3 array"
         raise ValueError(msg)
     translations = _translations(cell, periodic)
+    coordinates, _ = wrap_periodic_positions(coordinates, cell, periodic)
     elements, kinds = np.unique(numbers.astype(np.int64), return_inverse=True)
     coefficients = np.array(
         [[_coefficient(int(a), int(b)) for b in elements] for a in elements]

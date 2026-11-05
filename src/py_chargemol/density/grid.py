@@ -42,6 +42,8 @@ class DensityGrid:
     ``density`` contains valence electrons per bohr cubed; an all-electron
     density uses zero ``core_electrons``. ``steps`` contains the three voxel
     vectors as rows. Periodic grids contain each boundary point only once.
+    Nuclear positions may use any periodic cell images. Analyses retain those
+    coordinates and report bond translations relative to them.
     ``pseudodensity`` optionally supplies the PAW pseudo-valence density used
     to correct the occupancies of a reconstructed valence grid.
     """
@@ -360,6 +362,27 @@ def reciprocal(
 def nearest_grid_points(values: np.ndarray) -> npt.NDArray[np.int64]:
     """Round grid coordinates as Fortran NINT: half integers away from zero."""
     return (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(np.int64)
+
+
+def wrap_periodic_positions(
+    positions: np.ndarray,
+    lattice_vectors: np.ndarray,
+    periodic: Sequence[bool],
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.int64]]:
+    """Return local cell positions and their original integer image offsets.
+
+    Only periodic fractional coordinates are wrapped. Inputs are not modified,
+    and ``positions = wrapped + images @ lattice_vectors``. A pair translation
+    from wrapped positions becomes ``translation + images[i] - images[j]``
+    when expressed using the original positions.
+    """
+    wrapped = np.asarray(positions, dtype=np.float64)
+    images = np.zeros(wrapped.shape, dtype=np.int64)
+    if any(periodic):
+        fractional = wrapped @ np.linalg.inv(lattice_vectors)
+        images = np.where(periodic, np.floor(fractional), 0).astype(np.int64)
+        wrapped = wrapped - images @ lattice_vectors
+    return wrapped, images
 
 
 def integration_extent(

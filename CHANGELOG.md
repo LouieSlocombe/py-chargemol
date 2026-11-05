@@ -66,6 +66,9 @@ inputs. Each describes an individual optimization step with its own baseline.
 
 ### Fixed
 
+- Preserve bond pairs, CM5 charges, and QDR results when periodic atoms are
+  given in different cell images, retaining their original coordinates and
+  adjusting the reported bond translations (#16).
 - Include all points within the integration radius on triclinic grids, and
   include nearby periodic images in skew-cell CM5 and WFX calculations (#15).
 - Accept WFX atoms whose electrons are all in tight Gaussian primitives, such
