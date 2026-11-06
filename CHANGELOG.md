@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-11-06
 
 This release adds QDR and WFX calculation options, speeds up density analysis,
 and reduces memory use. Performance changes preserve the default regression
