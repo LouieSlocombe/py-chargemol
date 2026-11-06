@@ -37,7 +37,7 @@ To install from a checkout instead, run this from the repository root:
 python -m pip install .
 ```
 
-For optional JIT acceleration of density partitioning and bond integration,
+For optional JIT acceleration of density partitioning, spin, and bond analysis,
 install the Numba extra:
 
 ```bash
@@ -49,6 +49,8 @@ cache the compiled code on disk for later runs. The first calculation includes
 compilation overhead; repeated calculations benefit most. The default install
 uses NumPy, including on free-threaded Python builds. To select the NumPy path
 with Numba installed, set `PY_CHARGEMOL_DISABLE_JIT=1` before starting Python.
+The [benchmark tool](build_tools/README.md#benchmarking-optional-numba-acceleration)
+compares first-use and repeated calculations on the shipped density examples.
 
 See [Development](#development) for an editable install and developer tools, and the
 [changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)

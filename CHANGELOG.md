@@ -9,8 +9,9 @@ opt-in numerical change.
 
 ### Added
 
-- Optional Numba acceleration for core-density averages, DDEC shell statistics,
-  radial-weight accumulation, and bond integration. Install
+- Optional Numba acceleration for core-density averages and correction, DDEC
+  shell statistics and DDEC3 reference averages, radial-weight accumulation,
+  spin accumulation, and bond preparation and integration. Install
   `py-chargemol[numba]` to compile these kernels automatically on first use and
   cache them for later runs. The default installation retains the NumPy path;
   `PY_CHARGEMOL_DISABLE_JIT=1` selects it explicitly when Numba is installed.
@@ -36,6 +37,13 @@ opt-in numerical change.
 The performance figures below were measured during development on the tested
 inputs. Each describes an individual optimization step with its own baseline.
 
+- Expand the optional Numba kernels beyond the initial four reductions. Warm
+  full-analysis times fell from 10.61 to 3.54 s for NaCl DDEC3, 2.53 to 1.96 s
+  for triplet ozone, and 0.56 to 0.47 s for quartz, compared with the previous
+  Numba implementation. The checked output arrays and iteration counts matched
+  exactly. First-use compilation is more expensive; see the
+  [benchmark details](build_tools/README.md#benchmarking-optional-numba-acceleration)
+  for inputs, environment, and timing scope.
 - Speed up WFX grid construction using matrix products for primitive groups
   and separable Cartesian Gaussian factors for axis-aligned grids. Each change
   reduced grid-construction time by about a factor of three in its benchmarks.
