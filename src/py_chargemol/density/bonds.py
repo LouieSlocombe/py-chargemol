@@ -17,7 +17,13 @@ import numpy.typing as npt
 
 from py_chargemol import _jit
 from py_chargemol.ddec6 import FloatArray, IntArray, OverlapPairs
-from py_chargemol.density._bond_kernels import pair_shell_sums
+from py_chargemol.density._bond_kernels import (
+    add_exchange_vectors,
+    exchange_values,
+    minimum_shell_density,
+    pair_shell_sums,
+    spherical_shell_sums,
+)
 from py_chargemol.density.grid import (
     CUTOFF,
     NSHELLS,
@@ -200,11 +206,21 @@ def _spherical_average(  # noqa: PLR0913, PLR0917
     shell_populations = np.zeros_like(weights)
     inverse = reciprocal(pseudodensity)
     for atom, sample in enumerate(samples):
-        local_inverse = inverse[sample.indices]
-        shells = sample.shells
-        assigned = density[sample.indices] * weights[atom][shells] * local_inverse
-        sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
-        counts = occupied_counts(sampled[atom], shells, local_inverse)
+        if _jit.ENABLED:
+            sums, counts = spherical_shell_sums(
+                weights[atom],
+                density,
+                inverse,
+                sample.indices,
+                sample.shells,
+                sampled[atom],
+            )
+        else:
+            local_inverse = inverse[sample.indices]
+            shells = sample.shells
+            assigned = density[sample.indices] * weights[atom][shells] * local_inverse
+            sums = np.bincount(shells, weights=assigned, minlength=NSHELLS)
+            counts = occupied_counts(sampled[atom], shells, local_inverse)
         np.divide(sums, counts, out=averages[atom], where=counts > 0)
         shell_populations[atom] = sums * voxel_volume
     return averages, shell_populations
@@ -276,12 +292,22 @@ def _exchange_vectors(
         vectors = np.concatenate((vectors, spin), axis=2)
     total_vectors = np.zeros((grid_size, vectors.shape[2]))
     for atom, sample in enumerate(samples):
-        np.add.at(total_vectors, sample.indices, vectors[atom, sample.shells])
+        if _jit.ENABLED:
+            add_exchange_vectors(
+                vectors[atom], sample.indices, sample.shells, total_vectors
+            )
+        else:
+            np.add.at(total_vectors, sample.indices, vectors[atom, sample.shells])
     minimum_density = np.full_like(averages, 1e9)
     for atom, sample in enumerate(samples):
-        np.minimum.at(
-            minimum_density[atom], sample.shells, total_vectors[sample.indices, 0]
-        )
+        if _jit.ENABLED:
+            minimum_shell_density(
+                total_vectors, sample.indices, sample.shells, minimum_density[atom]
+            )
+        else:
+            np.minimum.at(
+                minimum_density[atom], sample.shells, total_vectors[sample.indices, 0]
+            )
     return vectors, total_vectors, minimum_density
 
 
@@ -449,16 +475,27 @@ def _summed_exchange(  # noqa: PLR0913, PLR0917
 ) -> FloatArray:
     summed = np.zeros(len(samples))
     for atom, sample in enumerate(samples):
-        total = total_vectors[sample.indices]
-        denominator = squared_total[sample.indices]
-        local = vectors[atom, sample.shells]
-        product = np.sum(local * (total - local), axis=1)
-        exchange = np.divide(
-            density[sample.indices] * product,
-            denominator,
-            out=np.zeros(len(denominator)),
-            where=denominator > ZERO**2,
-        )
+        if _jit.ENABLED:
+            exchange = exchange_values(
+                vectors[atom],
+                density,
+                total_vectors,
+                squared_total,
+                sample.indices,
+                sample.shells,
+                ZERO**2,
+            )
+        else:
+            total = total_vectors[sample.indices]
+            denominator = squared_total[sample.indices]
+            local = vectors[atom, sample.shells]
+            product = np.sum(local * (total - local), axis=1)
+            exchange = np.divide(
+                density[sample.indices] * product,
+                denominator,
+                out=np.zeros(len(denominator)),
+                where=denominator > ZERO**2,
+            )
         summed[atom] = 2.0 * voxel_volume * np.sum(exchange)
     return summed
 
