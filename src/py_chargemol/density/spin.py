@@ -11,7 +11,9 @@ from functools import lru_cache
 
 import numpy as np
 
+from py_chargemol import _jit
 from py_chargemol.ddec6 import FloatArray, IntArray
+from py_chargemol.density._spin_kernels import accumulate_spin, subtract_spin_theta
 from py_chargemol.density.bonds import AtomicSampleLike
 from py_chargemol.density.grid import NSHELLS
 
@@ -263,12 +265,24 @@ def partition_spin(  # noqa: PLR0912, PLR0913, PLR0915
                 if not scalar:
                     assigned_magnitude = np.maximum(assigned_magnitude, _ZERO**2)
                 assigned_spin = lagrange * (assigned_magnitude / magnitude)
-            for component, values in enumerate(assigned_spin):
-                sums[atom, :, component] = np.bincount(
-                    local.shells, values, minlength=NSHELLS
+            if _jit.ENABLED:
+                accumulate_spin(
+                    local.points,
+                    local.shells,
+                    local.fractions,
+                    lagrange,
+                    assigned_spin,
+                    sums[atom],
+                    new_ypsilon,
+                    new_trial,
                 )
-            _scatter(np.add, new_ypsilon, local.points, lagrange * local.fractions)
-            _scatter(np.add, new_trial, local.points, assigned_spin)
+            else:
+                for component, values in enumerate(assigned_spin):
+                    sums[atom, :, component] = np.bincount(
+                        local.shells, values, minlength=NSHELLS
+                    )
+                _scatter(np.add, new_ypsilon, local.points, lagrange * local.fractions)
+                _scatter(np.add, new_trial, local.points, assigned_spin)
             np.divide(
                 sums[atom],
                 local.shell_counts[:, None],
@@ -292,13 +306,23 @@ def partition_spin(  # noqa: PLR0912, PLR0913, PLR0915
         for atom, local in enumerate(local_data):
             # Theta depends only on the shell, and is reused by the next Lagrange step.
             shell_theta[atom] = _theta(spherical_average[atom], radial_spin[atom].T)
-            theta = shell_theta[atom].take(local.shells, axis=1)
-            _scatter(
-                np.subtract,
-                ypsilon,
-                local.points,
-                0.5 * (theta + local.proportional_theta) * local.fractions,
-            )
+            if _jit.ENABLED:
+                subtract_spin_theta(
+                    local.points,
+                    local.shells,
+                    local.fractions,
+                    local.proportional_theta,
+                    shell_theta[atom],
+                    ypsilon,
+                )
+            else:
+                theta = shell_theta[atom].take(local.shells, axis=1)
+                _scatter(
+                    np.subtract,
+                    ypsilon,
+                    local.points,
+                    0.5 * (theta + local.proportional_theta) * local.fractions,
+                )
     return SpinResult(
         populations[:, 0] if scalar else populations,
         radial_spin[..., 0] if scalar else radial_spin,
