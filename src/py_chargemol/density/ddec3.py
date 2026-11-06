@@ -4,6 +4,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from py_chargemol import _jit
+from py_chargemol.density._kernels import reference_shell_sums
 from py_chargemol.density.grid import NSHELLS, SCALE, shell_counts
 from py_chargemol.density.partition import (
     AtomicSample,
@@ -38,6 +40,22 @@ def _reference_averages(  # noqa: PLR0913, PLR0917 -- Physical radial averages.
     tau = np.ones_like(references)
     # One atom at a time, so no array per sample point outlives its atom.
     for atom, sample in enumerate(samples):
+        if _jit.ENABLED:
+            ratio_sum, numerator, denominator = reference_shell_sums(
+                conditioned[atom],
+                density,
+                total,
+                reference_total,
+                conditioned_total,
+                sample.indices,
+                sample.shells,
+                _ZERO,
+            )
+            np.divide(
+                ratio_sum, points[atom], out=average_ratio[atom], where=points[atom] > 0
+            )
+            np.divide(numerator, denominator, out=tau[atom], where=points[atom] > 0)
+            continue
         # Points outside the partition contribute zeros rather than being removed.
         valid = total[sample.indices] > _ZERO
         shells = sample.shells

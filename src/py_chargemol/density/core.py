@@ -10,7 +10,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from py_chargemol import _jit
-from py_chargemol.density._kernels import core_shell_sums
+from py_chargemol.density._kernels import (
+    add_corrected_core,
+    assigned_core_values,
+    core_shell_sums,
+)
 from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
@@ -88,9 +92,12 @@ def partition_core(
             factor = 0.0
             if sum_cubes > ZERO**3 and largest > ZERO:
                 factor = min(delta / (sum_cubes * pixel_volume), 0.25 / largest**2)
-            significant = np.where(values > ZERO**2, values, 0.0)
-            corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
-            np.add.at(adjusted, sample.indices, corrected)
+            if _jit.ENABLED:
+                add_corrected_core(values, sample.indices, factor, ZERO**2, adjusted)
+            else:
+                significant = np.where(values > ZERO**2, values, 0.0)
+                corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
+                np.add.at(adjusted, sample.indices, corrected)
         density = adjusted
         totals, counts, averages = _local_averages(
             density, weights, pseudo, samples, sampled
@@ -136,6 +143,10 @@ def _assigned(
     density: np.ndarray, radial: np.ndarray, inverse: np.ndarray, sample: AtomicSample
 ) -> np.ndarray:
     """One atom's share of the density at its points, given the reciprocal."""
+    if _jit.ENABLED:
+        return assigned_core_values(
+            radial, density, inverse, sample.indices, sample.shells
+        )
     return np.asarray(
         radial[sample.shells] * density[sample.indices] * inverse[sample.indices]
     )
