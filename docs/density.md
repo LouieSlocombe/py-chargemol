@@ -25,7 +25,8 @@ Use `result.compute_qdr().charges` to get QDR point charges in memory from
 this partition. If QDR is the only quantity you need,
 `compute_qdr_from_density(grid)` performs both calculations in one call.
 For DDEC3, use `compute_ddec3(grid)` or `py-chargemol analyze FILE --method ddec3`.
-QDR requires DDEC6 and directed overlap populations.
+QDR requires DDEC6 and directed overlap populations. For residual multipoles
+and solver settings, see the [QDR guide](qdr.md#read-the-result-and-check-the-solver).
 
 ## Choose the input
 

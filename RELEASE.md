@@ -34,8 +34,8 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
 
 ## Prepare and verify
 
-1. Set the version in `pyproject.toml`, move the relevant `Unreleased` notes in
-   `CHANGELOG.md` under that version, and run `uv lock`.
+1. Set the version in `pyproject.toml`, write the versioned entry in
+   `CHANGELOG.md` using any accumulated unreleased notes, and run `uv lock`.
    Runtime and CLI versions come from installed package metadata; there is no
    separate source version to update.
 2. From the repository root, run the checks with the locked dependencies:
@@ -45,6 +45,7 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
    uv run --locked prek run --all-files --show-diff-on-failure
    uv run --locked mypy
    uv run --locked pytest --cov
+   uv run --locked --extra numba pytest
    uv build --no-sources --clear
    uvx --from twine twine check --strict dist/*
    uv run --isolated --no-project --with dist/*.whl python build_tools/smoke_install.py
@@ -54,13 +55,15 @@ in its publishing settings. No long-lived PyPI token is needed by this workflow.
    Both smoke tests must print the proposed release version and complete a
    molecular density-to-QDR calculation, including bond orders, using bundled
    reference-ion and core data. The wheel includes `py.typed`, the density
-   archives, and both licenses; the sdist also includes the lockfile and the
-   tests with their unmodified worked-example fixtures under `test/`.
+   archives, and both licenses. The source distribution also includes the
+   lockfile, the guides under `docs/`, and the tests and fixtures used by
+   the worked examples.
 3. Review and commit the release changes, push them for review, and require the
    **All checks passed** CI result on the exact commit being released. The
-   [CI matrix](.github/workflows/ci.yml) tests Python 3.14 and 3.15 on Linux,
-   macOS, and Windows, plus free-threaded Python 3.14 and the oldest allowed
-   direct dependencies on Linux.
+   [CI matrix](.github/workflows/ci.yml) tests the NumPy and optional Numba
+   paths on Python 3.14 and 3.15 on Linux, macOS, and Windows. Additional
+   NumPy jobs cover free-threaded Python 3.14 and the oldest allowed direct
+   dependencies on Linux.
 
 ## Publish
 

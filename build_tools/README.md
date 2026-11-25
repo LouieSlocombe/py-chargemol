@@ -1,6 +1,51 @@
-# Conda environments
+# Development and benchmarking
 
 ## Development
+
+From a checkout, install the package in editable mode with
+[uv](https://docs.astral.sh/uv/) and the committed lockfile. Run the following
+commands from the repository root.
+
+```bash
+uv sync --locked
+uv run --locked prek install
+```
+
+The hooks run Ruff, check the lockfile and workflows, and check file hygiene.
+They exclude the original worked examples and WFX input to preserve the
+distributed data. To run the checks used in CI locally, use these commands.
+
+```bash
+uv run --locked prek run --all-files --show-diff-on-failure
+uv run --locked mypy
+uv run --locked pytest --cov
+uv run --locked --extra numba pytest
+uv build --no-sources
+```
+
+The NumPy test run enforces 100% line and branch coverage. The separate
+Numba run exercises compiled kernels. For a quicker edit-and-test cycle,
+run a subset such as `uv run --locked pytest test/test_density_workflow.py`.
+For tests grouped by scientific reference calculation, see the
+[validation notes](../test/README.md).
+
+The [CI matrix](../.github/workflows/ci.yml) runs NumPy and Numba on Linux,
+macOS, and Windows with Python 3.14 and 3.15. Linux also exercises NumPy
+with free-threaded Python 3.14 and with the lowest allowed direct dependency
+versions on standard Python 3.14. The build job checks metadata and runs
+[smoke_install.py](smoke_install.py) against isolated installs of the wheel
+and source distribution. **All checks passed** combines the required jobs
+for branch protection. See the [release guide](../RELEASE.md) for the exact
+distribution checks.
+
+The public Python entry points are exported from
+[py_chargemol](../src/py_chargemol/__init__.py). The
+[density package](../src/py_chargemol/density/) contains the readers, grid,
+partitioning, spin, and bond calculations. The [QDR package](../src/py_chargemol/qdr/)
+contains the array interface, solver, and output writer. File discovery for
+existing Chargemol tables is in [qdr/run.py](../src/py_chargemol/qdr/run.py).
+
+### Develop with conda
 
 With conda installed, [conda_install.sh](conda_install.sh) creates or updates the
 `py-chargemol-dev` environment from [environment-dev.yml](environment-dev.yml).
@@ -43,7 +88,7 @@ python -m pip install --no-deps -e .
 For dependency changes, rerun `conda_install.sh` after updating the environment
 file so conda also resolves the new requirements.
 
-## Using the package
+## Using the package with conda
 
 Conda is optional: `python -m pip install .` installs the package and NumPy into
 an existing Python 3.14+ environment. [environment.yml](environment.yml) creates
@@ -61,10 +106,11 @@ analyses and QDR charges itself using bundled reference atomic densities.
 You supply an electron density or wavefunction from an electronic-structure
 calculation. See the [installation requirements](../README.md#installation).
 
-Conda resolves dependencies from these environment files; it does not use the
-versions pinned in `uv.lock`. Keep their dependency constraints aligned with
-[pyproject.toml](../pyproject.toml). For the locked development environment, use
-the [uv workflow](../README.md#development).
+Conda resolves dependencies from the environment files. Keep their lower
+bounds aligned with [pyproject.toml](../pyproject.toml) and run `uv lock`
+when the project dependencies change. The [uv workflow](#development) uses
+the exact versions in `uv.lock`. Dependabot checks the lockfile, hooks, and
+Actions monthly.
 
 ## Benchmarking optional Numba acceleration
 

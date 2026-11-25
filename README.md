@@ -6,66 +6,35 @@ moments, bond orders, Hirshfeld and CM5 charges, and quadrupole-dipole resorbed
 are implemented in Python and NumPy, based on Chargemol 3.5 (September 26, 2017)
 and T. A. Manz's April 9, 2025 QDR program.
 
-After installation, analyses run without a Chargemol executable, Fortran
-compiler, external atomic-density directory, or network access. Reference
-densities for neutral atoms, ions, and core electrons are bundled for elements
-1–109. You can also compute QDR charges from existing Chargemol results or
-in-memory DDEC6 arrays.
+Supply an electron density or wavefunction from an electronic-structure
+calculation, or use existing Chargemol files or in-memory DDEC6 arrays for QDR.
 
-QDR charges are meant for atom-centred point-charge models in classical force
-fields. They fold part of each atom's DDEC6 quadrupole and dipole into the point
-charges of its bonded neighbours, weighted by the bond overlap populations, so a
-model truncated at monopole order reproduces more of the electrostatic potential
-around the material. To interpret charge transfer or the chemical states of
-atoms, use the DDEC6 net atomic charges, which are not resorbed.
+Use DDEC6 net atomic charges to interpret electron transfer and chemical
+states. QDR folds part of the atomic dipoles and quadrupoles into the charges
+on bonded neighbours, weighted by their overlap populations. The resulting
+point charges are intended for atom-centred force-field models of the
+electrostatic potential.
 
 ## Installation
 
-Python 3.14 or newer is required. NumPy 2.3.3 or newer is the only required
-runtime dependency and is installed automatically by pip.
-
-Install the latest release from PyPI:
+Install with Python 3.14 or newer. Pip installs NumPy (2.3.3 or newer), the
+only required runtime dependency. Reference densities for elements 1–109 are
+bundled, so analyses run offline without a Chargemol executable or Fortran
+compiler.
 
 ```bash
 python -m pip install py-chargemol
 py-chargemol --version
 ```
 
-To install from a checkout instead, run this from the repository root:
-
-```bash
-python -m pip install .
-```
-
-For optional JIT acceleration of density partitioning, spin, and bond analysis,
-install the Numba extra:
-
-```bash
-python -m pip install 'py-chargemol[numba]'
-```
-
-When Numba is installed, these kernels compile automatically on first use and
-cache the compiled code on disk for later runs. The first calculation includes
-compilation overhead; repeated calculations benefit most. The default install
-uses NumPy, including on free-threaded Python builds. To select the NumPy path
-with Numba installed, set `PY_CHARGEMOL_DISABLE_JIT=1` before starting Python.
-The [benchmark tool](build_tools/README.md#benchmarking-optional-numba-acceleration)
-compares first-use and repeated calculations on the shipped density examples.
-
-See [Development](#development) for an editable install and developer tools, and the
-[changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
-for release notes. Conda and uv are optional development tools.
-
-You still need an electron density or wavefunction from an electronic-structure
-calculation. Atomic coordinates alone do not determine a DDEC analysis:
-
-```text
-Electron-density calculation → py-chargemol DDEC6 analysis → QDR charges
-```
+For a local checkout, run `python -m pip install .` from its root. For optional
+Numba acceleration of partitioning, spin, and bond calculations, run
+`python -m pip install 'py-chargemol[numba]'`. Numba compiles kernels on
+first use and caches them for later runs. To use NumPy with Numba installed,
+set `PY_CHARGEMOL_DISABLE_JIT=1` before starting Python. See the
+[first-use and repeated-run benchmarks](https://github.com/LouieSlocombe/py-chargemol/blob/main/build_tools/README.md#benchmarking-optional-numba-acceleration).
 
 ## Usage
-
-Choose an entry point for the data you already have:
 
 | Starting point | Python API | Command line |
 | --- | --- | --- |
@@ -73,26 +42,41 @@ Choose an entry point for the data you already have:
 | Existing Chargemol output files | [`calculate_qdr`](#compute-qdr-from-chargemol-output) | `py-chargemol qdr` |
 | DDEC6 arrays in memory | [`compute_qdr_from_arrays`](#compute-directly-from-arrays) | — |
 
+Run the worked examples from the root of a
+[repository checkout](https://github.com/LouieSlocombe/py-chargemol) or an
+unpacked source distribution. Both include the example inputs under `test/`
+and the guides under `docs/`.
+
 ### Compute directly from an electron density
 
-To run a complete analysis from the repository root, use the supplied triplet
-ozone wavefunction. With the default settings, this command writes the DDEC6
+To run a complete analysis, use the supplied triplet ozone wavefunction.
+With the default settings, this command writes the DDEC6
 charges, atomic spin moments, bond orders, and QDR charges to `results/ozone/`.
 
 ```bash
 py-chargemol analyze test/density_examples/ozone_triplet_PW91.wfx --output-dir results/ozone
 ```
 
-The first three atom rows in `DDEC6_net_atomic_charges.xyz` give approximately
-+0.215330, −0.107665, and −0.107665 e. For your own calculation, replace the
-WFX path with a density file or VASP calculation directory. The
+The first three atom rows in `DDEC6_net_atomic_charges.xyz` give the charges
+in e. To obtain the same values in Python, use the density reader and partitioner.
+
+```python
+from py_chargemol import compute_ddec6, read_density
+
+grid = read_density("test/density_examples/ozone_triplet_PW91.wfx")
+ozone = compute_ddec6(grid)
+print(ozone.charges.round(6))  # [ 0.21533  -0.107665 -0.107665]
+```
+
+For your own calculation, replace the WFX path with a density file or VASP
+calculation directory. The
 [density guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/docs/density.md)
 covers the Python workflow, file discovery, units, core counts, output files,
 and electron-count errors.
 
 ### Compute QDR from Chargemol output
 
-From the repository root, try the carbon monoxide example with the Python API.
+Try the carbon monoxide example with the Python API.
 The two values are the point charges on carbon and oxygen, in elementary-charge
 units.
 
@@ -115,222 +99,31 @@ directed overlap populations to `compute_qdr_from_arrays`. The
 [array example and argument table](https://github.com/LouieSlocombe/py-chargemol/blob/main/docs/qdr.md#compute-from-arrays)
 give the units, tensor component order, and periodic-image convention.
 
-## Project information
+## Development
 
-<details>
-<summary><strong>Compatibility and reference fixtures</strong></summary>
+Run `uv sync --locked` from a checkout to install the package and development
+tools in editable mode. The [development guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/build_tools/README.md)
+covers conda setup, local checks, optional Numba tests, and benchmarks. See
+the [changelog](https://github.com/LouieSlocombe/py-chargemol/blob/main/CHANGELOG.md)
+and [release guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/RELEASE.md)
+for release history and publishing steps.
 
-### Compatibility with the original programs
+## Compatibility with the original programs
 
-The density engine is based on the September 2017 Chargemol program. Output
-files retain the scientific quantities and familiar table layouts, while
-status messages and filenames use the Python interface.
-Invalid densities, failed partition convergence, and negative valence
-populations raise explicit errors. Quadrupole eigenvalues are computed from
-the complete tensor, including analytic WFX corrections.
+QDR regression tests compare the six original worked examples with the Fortran
+program's output. Density tests include a spin-polarized ozone wavefunction,
+NaCl with corrected triclinic integration bounds, and a quartz cell with
+recorded Python results. See the [validation notes](https://github.com/LouieSlocombe/py-chargemol/blob/main/test/README.md)
+for the comparisons, tolerances, and commands to reproduce them.
 
-Triclinic integration domains use reciprocal-lattice bounds to include the full
-radial cutoff sphere. This corrects omissions in the original angle-based
-bounds; for the bundled NaCl example, DDEC6 and DDEC3 charges differ from the
-original results by about 2.5e-5 e and 7e-6 e, respectively.
-
-Grid validation is not identical to the original executable: the Python API
-permits coarse grids for controlled numerical experiments and does not apply
-all of Chargemol's negative-density rejection thresholds. Electron-count and
-partition checks do not establish grid convergence; physical calculations
-still require a sufficiently resolved input density. Periodic, effective-core,
-and ghost-centre WFX paths have analytic and conservation tests, but were not
-compared against supplied full reference calculations for those cases.
-
-The QDR regression tests compare every worked example with the Fortran program,
-allowing one unit in the last printed digit for rounding and checking tiny
-solver residuals against an absolute tolerance of `1e-10`. Some implementation
-details differ:
-
-- QDR solves run across atoms using NumPy arrays instead of a separate OpenMP
-  thread per atom. QDR atom indices and lattice translations use 64-bit
-  integers, so separate `int8` builds for very large cells are not needed.
-- The 3×3 quadrupole eigenvalues come from `numpy.linalg.eigvalsh`, not a closed
-  form.
-- Malformed input raises an explicit error, with file and line information
-  where available. Numeric fields that overflow to asterisks are rejected,
-  except for the recoverable table counts described below.
-- The Fortran program skips 14 lines between the atomic coordinates and the
-  multipole table. The September 2017 Chargemol release writes 13, so here the
-  table is found by its title line instead, and that release's
-  `DDEC6_even_tempered_net_atomic_charges.xyz` can be read too.
-- Chargemol writes the atom and pair counts in five-character fields, which
-  print as `*****` from 100,000 on. The Fortran program stops on these; here
-  the count is taken from the number of rows in the table instead.
-- The output's version line names the py-chargemol version. The log file holds
-  the same information in a different layout, and the XYZ output always uses
-  LF line endings.
-
-### Reference fixtures
-
-`test/worked_examples/` holds the Chargemol inputs and reference QDR charge
-outputs from the six worked examples distributed with T. A. Manz's April 9,
-2025 QDR program. These files are preserved unmodified. The regression tests
-run every example and compare the output with the Fortran program's reference
-output line by line.
-
-The density engine has separate offline regression fixtures for the original
-VASP NaCl and spin-polarized Gaussian ozone calculations, plus an α-quartz cell
-with py-chargemol reference results. See the
-[density fixture notes](https://github.com/LouieSlocombe/py-chargemol/blob/main/test/density_examples/README.md) for provenance and
-regeneration instructions. NaCl retains the original Chargemol reference data
-alongside corrected Python results for full-sphere integration. Numerical
-reference cases also cover the
-reference-ion, reshaping, and spin routines.
-During development it was also checked against
-the supplied CP2K water and four Gaussian ozone examples, including charged
-and spin-polarized wavefunctions. Ordinary tests use only packaged fixtures;
-they do not run Chargemol or require a compiler.
-
-The 1,897 reference-ion and core-density text files used at the default radial
-resolution are stored byte-for-byte in compressed, per-element package
-archives. A SHA-256 manifest records their provenance. The installed wheel
-includes these resources.
-
-</details>
-
-<details>
-<summary><strong>Development and project layout</strong></summary>
-
-### Development
-
-Clone the repository and enter its directory:
-
-```bash
-git clone https://github.com/LouieSlocombe/py-chargemol.git
-cd py-chargemol
-```
-
-With [uv](https://docs.astral.sh/uv/), install the package in editable mode and
-its development tools using the committed lockfile:
-
-```bash
-uv sync --locked
-```
-
-Alternatively, create or update the `py-chargemol-dev` conda environment, which also
-installs the package in editable mode with its development tools (see
-[`build_tools/`](https://github.com/LouieSlocombe/py-chargemol/blob/main/build_tools/README.md)):
-
-```bash
-bash build_tools/conda_install.sh
-conda activate py-chargemol-dev
-```
-
-Install the Git hooks once. They then run Ruff, lockfile, workflow security,
-and file hygiene checks before each commit. The hooks skip the reference
-fixture data in `test/worked_examples/` and the original WFX regression input
-to preserve those files.
-
-```bash
-uv run --locked prek install
-```
-
-Run the complete local checks:
-
-```bash
-uv run --locked prek run --all-files
-uv run --locked mypy
-uv run --locked pytest --cov
-uv build --no-sources
-```
-
-`--cov` measures coverage and fails below 100%, as CI does. Leave it off to run a
-subset of the tests. Ruff can apply safe lint and formatting changes with:
-
-```bash
-uv run --locked ruff check --fix .
-uv run --locked ruff format .
-```
-
-In the conda environment, run the same tools without the `uv run --locked`
-prefix.
-
-#### Dependencies
-
-`pyproject.toml` declares the oldest versions the package supports and
-`uv.lock` pins the exact versions used in development and CI. CI also tests
-against the oldest allowed versions, so keep lower bounds honest. Update the
-conda environment files in `build_tools/` alongside `pyproject.toml`.
-
-Dependabot refreshes `uv.lock`, the pre-commit hooks, and the GitHub Actions
-once a month, grouping each into a single pull request.
-
-#### Continuous integration
-
-Every push to `main` and every pull request runs the hooks and mypy, tests on
-Linux, macOS, and Windows with Python 3.14 and 3.15, tests the
-free-threaded 3.14t build and the oldest allowed dependencies, and builds and
-smoke tests the sdist and wheel. Require the **All checks passed** job in
-branch protection rather than each matrix entry.
-
-`release.yml` is configured to publish to PyPI with trusted publishing when a
-GitHub release is published. Follow the
-[release guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/RELEASE.md)
-for preparation and publishing steps. Check that the license allows the
-distribution first.
-
-### Project layout
-
-```text
-.
-├── .github/                    # CI, PyPI release, and Dependabot
-├── build_tools/                # conda environments, installer and package smoke test
-├── src/py_chargemol/
-│   ├── ddec6.py                # readers for Chargemol's DDEC6 output
-│   ├── elements.py             # element symbols and atomic weights
-│   ├── multipoles.py           # total molecular multipole moments
-│   ├── units.py                # unit conversions
-│   ├── __main__.py             # the py-chargemol command
-│   ├── density/                # independent density-to-DDEC calculations
-│   │   ├── analysis.py         # density-analysis APIs and result objects
-│   │   ├── workflow.py         # input discovery and job_control.txt settings
-│   │   ├── grid.py             # density grids and atomic integration samples
-│   │   ├── readers.py          # cube, VASP and XSF density input
-│   │   ├── wfx.py              # wavefunctions and analytic Gaussian integrals
-│   │   ├── core.py             # core partitioning and integration corrections
-│   │   ├── references.py       # reference-ion and core-density lookup
-│   │   ├── partition.py        # DDEC6 partitioning and radial constraints
-│   │   ├── ddec3.py            # DDEC3 partitioning
-│   │   ├── reshaping.py        # radial-density tail constraints
-│   │   ├── cm5.py              # Hirshfeld-to-CM5 charge correction
-│   │   ├── bonds.py            # overlaps, contact exchanges and bond orders
-│   │   ├── spin.py             # collinear and noncollinear spin partitioning
-│   │   ├── diagnostics.py      # noncollinear spin-gradient diagnostics
-│   │   ├── output.py           # density-analysis output files
-│   │   └── data/               # bundled reference-ion and core densities
-│   └── qdr/
-│       ├── arrays.py           # direct computation from Python and NumPy arrays
-│       ├── solver.py           # the QDR resorption passes
-│       ├── output.py           # QDR-DDEC6_point_charges.xyz writer
-│       └── run.py              # calculate_qdr and the legacy run_qdr writer
-├── test/                       # unit and worked-example regression tests
-│   ├── density_examples/       # density fixtures and provenance notes
-│   └── worked_examples/        # unmodified reference inputs and QDR outputs
-├── CHANGELOG.md                # release notes
-├── RELEASE.md                  # release preparation and publishing
-├── pyproject.toml              # project metadata and tool configuration
-└── uv.lock                     # pinned development dependencies
-```
-
-</details>
-
-<details>
-<summary><strong>Citation and license</strong></summary>
-
-### Citation
+## Citation
 
 Publications using these analyses must cite the original methods, as the
 licenses require. For DDEC, bond-order, and spin calculations, cite the methods
 listed in
 [LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL),
 including the DDEC6 papers by T. A. Manz and N. Gabaldon Limas and the
-Chargemol 3.5 program. For QDR charges, cite:
+Chargemol 3.5 program. For QDR charges, cite both the method and the program.
 
 - A. C. Escobosa and T. A. Manz, "How well do various QM-derived net atomic
   charges reproduce the electrostatic potential surrounding a material across
@@ -341,7 +134,7 @@ Chargemol 3.5 program. For QDR charges, cite:
 The output file keeps the Fortran program's citation text, which predates the
 paper's publication.
 
-### License
+## License
 
 The QDR implementation retains the original terms, which
 [LICENSE](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE)
@@ -350,5 +143,3 @@ Chargemol's terms in
 [LICENSE-CHARGEMOL](https://github.com/LouieSlocombe/py-chargemol/blob/main/LICENSE-CHARGEMOL).
 Both require attribution and citation of the original methods in published
 results.
-
-</details>

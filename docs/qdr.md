@@ -4,6 +4,8 @@ QDR uses DDEC6 atomic dipoles, quadrupoles, and directed bond overlap
 populations to redistribute charge between bonded atoms. The resulting charges
 serve as atom-centred point charges for classical force fields. Use the
 original DDEC6 charges for chemical interpretation of electron transfer.
+If your starting point is an electron density or wavefunction, follow the
+[density workflow](density.md#run-the-triplet-ozone-example).
 
 ## Start with Chargemol output
 
