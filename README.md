@@ -186,182 +186,30 @@ charge, units, core counts, and grid resolution.
 
 </details>
 
-<details>
-<summary><strong>QDR from Chargemol output: Python, command line, and output files</strong></summary>
-
 ### Compute QDR from Chargemol output
 
-Read existing Chargemol output and return the computed arrays without writing
-any files:
+From the repository root, try the carbon monoxide example with the Python API.
+The two values are the point charges on carbon and oxygen, in elementary-charge
+units.
 
 ```python
 from py_chargemol import calculate_qdr
 
-result = calculate_qdr("path/to/chargemol/output")
-
-print(result.charges)  # QDR point charges, e, shape (n,)
-print(result.atomic_dipoles)  # residual dipoles, e·bohr, shape (n, 3)
-print(result.atomic_quadrupoles)  # residual quadrupoles, e·bohr², shape (n, 6)
-print(result.cg_iterations, result.residual_norm)  # solver diagnostics
-
-if result.moments is not None:
-    print(result.moments.charges.dipole_magnitude)
-    print(result.moments.with_dipoles.dipole_magnitude)
-    print(result.moments.with_quadrupoles.quadrupole_tensor)
+co = calculate_qdr("test/worked_examples/CO_molecule")
+print(co.charges.round(6))  # [-0.003964  0.003964]
 ```
 
-`calculate_qdr(directory=".", *, charges_file=None, overlaps_file=None,
-max_cg_iterations=10, tolerance=1e-12, solver="cg")` returns a `QDRResult`. The
-directory defaults to the current directory. It discovers these input filenames:
-
-- `DDEC6_net_atomic_charges.xyz` (or `DDEC6_even_tempered_net_atomic_charges.xyz`)
-- `overlap_populations_and_contact_exchanges.txt`, `overlap_populations.txt`, or
-  the September 2017 `overlap_populations.xyz`
-
-Pass `charges_file` and `overlaps_file` to choose other input files. Explicit
-paths are relative to the working directory, not the input directory. A
-nonperiodic single atom needs no overlap file and returns its original charge
-and atomic multipoles.
-
-Like the QDR program, the default `solver="cg"` solves each atom's linear
-systems by conjugate gradients. `solver="direct"` instead solves a reduced 5×5
-or 3×3 system per atom. The direct solver does not use the iteration limit or
-tolerance and reports zero `cg_iterations`. It agrees with converged conjugate
-gradients to rounding in the regression tests; finite-precision arithmetic and
-the chosen iteration limit and tolerance affect the comparison.
-
-Use `solver="direct"` with any QDR computation entry point, including
-`compute_qdr_from_arrays`, `compute_qdr_from_density`, and
-`DDECResult.compute_qdr`. For `write_density_results`, use `qdr_solver="direct"`.
-
-For nonperiodic systems, `result.moments` contains the total molecular moments
-about the centre of mass at three levels: `charges` (point charges alone),
-`with_dipoles` (including residual atomic dipoles), and `with_quadrupoles`
-(including residual atomic quadrupoles too). Each provides a `dipole`,
-`dipole_magnitude`, `quadrupole`, `quadrupole_tensor`, and
-`quadrupole_eigenvalues`. For periodic systems, `result.moments` is `None`.
-
-#### Work with parsed analysis objects
-
-The readers, `DDEC6Analysis`, `OverlapPairs`, and pure `compute_qdr_charges`
-function are also available from the package root:
-
-```python
-from py_chargemol import (
-    DDEC6Analysis,
-    OverlapPairs,
-    compute_qdr_charges,
-    read_ddec6_net_atomic_charges,
-    read_overlap_populations,
-)
-
-analysis: DDEC6Analysis = read_ddec6_net_atomic_charges("DDEC6_net_atomic_charges.xyz")
-pairs: OverlapPairs = read_overlap_populations(
-    "overlap_populations_and_contact_exchanges.txt"
-)
-result = compute_qdr_charges(analysis, pairs)
-```
-
-The readers convert Chargemol coordinates to bohr and pair indices to zero-based
-indices. `compute_qdr_charges` returns the same `QDRResult`, including molecular
-moments for nonperiodic systems, without writing files.
-
-#### Write QDR output files
-
-Use `run_qdr` when you want to compute and write
-`QDR-DDEC6_point_charges.xyz`:
-
-```python
-from py_chargemol import run_qdr
-
-result = run_qdr("path/to/chargemol/output")
-```
-
-Progress goes to the `py_chargemol.qdr.run` Python logger. Configure Python
-logging to capture it; the command-line interface creates the log file
-automatically. For a single atom, `run_qdr` returns `None` without writing a
-charge file; use `calculate_qdr` if you need its arrays.
-
-#### Command line
-
-Run `py-chargemol qdr` in the directory that holds the Chargemol output, or pass
-the directory:
-
-```bash
-py-chargemol qdr path/to/chargemol/output
-```
-
-For systems with more than one atom, the command writes two files to that
-directory:
-
-- `QDR-DDEC6_point_charges.xyz`: the QDR point charges as an XYZ file Jmol can
-  read, followed by the residual atomic dipoles and quadrupoles, the electron
-  cloud parameters, and, for molecules, the total dipole and quadrupole moments.
-- `QDR_charges_computation_logfile.txt`: a log of the run.
-
-`--charges`, `--overlaps`, `--output`, and `--log` choose other files; explicit
-paths are relative to the working directory. Existing output and log files are
-overwritten. For a single atom, only the log is written.
-`--solver direct` solves the reduced linear systems instead of using
-conjugate gradients, and the output file says so in place of the iteration
-count; `py-chargemol analyze` takes the same choice as `--qdr-solver`. See
-`py-chargemol qdr --help`.
-
-</details>
-
-<details>
-<summary><strong>QDR from arrays: examples and argument reference</strong></summary>
+For your own Chargemol directory, `py-chargemol qdr DIR` writes
+`QDR-DDEC6_point_charges.xyz` and a run log there. For filenames, output
+overrides, residual multipoles, and solver diagnostics, see the
+[QDR guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/docs/qdr.md).
 
 ### Compute directly from arrays
 
-`compute_qdr_from_arrays` accepts Python lists or NumPy arrays, so an in-memory
-workflow needs no intermediate files or electron-cloud parameters. This
-synthetic two-atom example is runnable as written:
-
-```python
-from py_chargemol import compute_qdr_from_arrays
-
-result = compute_qdr_from_arrays(
-    atomic_numbers=[1, 1],
-    positions=[[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]],
-    net_charges=[0.1, -0.1],
-    atomic_dipoles=[[0.02, 0.0, 0.0], [0.02, 0.0, 0.0]],
-    atomic_quadrupoles=[[0.0] * 6, [0.0] * 6],
-    atom1=[0, 1],
-    atom2=[1, 0],
-    populations=[0.5, 0.5],
-)
-
-print(result.charges)
-print(result.atomic_dipoles)
-```
-
-The inputs describe `n` atoms and `m` directed overlap pairs:
-
-| Argument | Shape | Meaning and units |
-| --- | --- | --- |
-| `atomic_numbers` | `(n,)` | Atomic numbers |
-| `positions` | `(n, 3)` | Cartesian coordinates in bohr |
-| `net_charges` | `(n,)` | DDEC6 net atomic charges in e |
-| `atomic_dipoles` | `(n, 3)` | DDEC6 atomic dipoles in e·bohr |
-| `atomic_quadrupoles` | `(n, 6)` | Traceless DDEC6 quadrupoles in e·bohr², ordered `xx, xy, xz, yy, yz, zz` |
-| `atom1`, `atom2` | `(m,)` | Zero-based atom indices |
-| `populations` | `(m,)` | Bond overlap populations in e |
-| `translations` | `(m, 3)` | Integer lattice translations of the second atom; defaults to zero |
-| `lattice_vectors` | `(3, 3)` | Cell vectors as rows, in bohr; defaults to zero for a nonperiodic system |
-
-Each bond must appear in both directions with the same population, as in the
-example. For a periodic pair `(i, j)` with translation `t`, also supply `(j, i)`
-with translation `-t`. A zero cell-vector row marks a nonperiodic direction.
-All arguments are keyword-only; `max_cg_iterations=10`, `tolerance=1e-12`, and
-`solver="cg"` control the solver. The returned `QDRResult` has the same arrays,
-diagnostics, and moments as `calculate_qdr`.
-
-This array API performs QDR resorption using supplied DDEC6 results. Use
-`compute_ddec6` to generate those results from an electron density. The synthetic
-values above illustrate the API, not a physical DDEC6 analysis.
-
-</details>
+Pass the DDEC6 net charges, atomic dipoles and quadrupoles, geometry, and
+directed overlap populations to `compute_qdr_from_arrays`. The
+[array example and argument table](https://github.com/LouieSlocombe/py-chargemol/blob/main/docs/qdr.md#compute-from-arrays)
+give the units, tensor component order, and periodic-image convention.
 
 ## Project information
 
