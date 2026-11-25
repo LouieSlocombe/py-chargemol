@@ -420,8 +420,9 @@ def read_density(  # noqa: PLR0913
     Ambiguous unnamed inputs raise an error instead of choosing arbitrarily.
     The ``density format`` control ``onetep`` selects bohr coordinates with
     electrons/angstrom³ densities; ``e_per_angs3`` uses angstrom for both.
-    WFX core counts and periodicity come from its wavefunction metadata;
-    contradictory explicit overrides are rejected and job controls are ignored.
+    WFX uses its own core counts and periodicity, and explicit values for these
+    two fields must agree with the wavefunction. The net charge can be set
+    through job control or the explicit ``net_charge`` argument.
     """
     if format not in {"auto", "cube", "vasp", "xsf", "wfx"}:
         msg = "format must be auto, cube, vasp, xsf, or wfx"

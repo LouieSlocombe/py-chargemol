@@ -75,7 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
         "source", type=Path, help="density file or calculation directory"
     )
     analyze.add_argument(
-        "--format", choices=("auto", "cube", "vasp", "xsf", "wfx"), default="auto"
+        "--format",
+        choices=("auto", "cube", "vasp", "xsf", "wfx"),
+        default="auto",
+        help="input format (default: discover from the source)",
     )
     analyze.add_argument(
         "--method",
@@ -96,10 +99,20 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=float,
         metavar="N",
-        help="core electron count for each atom (required for valence-only cubes)",
+        help="core counts in atom order for valence cubes, XSF, or VASP",
     )
-    analyze.add_argument("--density-kind", choices=("total", "valence"))
-    analyze.add_argument("--output-dir", type=Path, default=Path())
+    analyze.add_argument(
+        "--density-kind",
+        choices=("total", "valence"),
+        help="cube density kind (default: valence for names starting with 'valence', "
+        "otherwise total)",
+    )
+    analyze.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(),
+        help="directory for result files (default: current working directory)",
+    )
     analyze.add_argument(
         "--no-qdr", action="store_true", help="write only the DDEC analysis"
     )

@@ -73,118 +73,22 @@ Choose an entry point for the data you already have:
 | Existing Chargemol output files | [`calculate_qdr`](#compute-qdr-from-chargemol-output) | `py-chargemol qdr` |
 | DDEC6 arrays in memory | [`compute_qdr_from_arrays`](#compute-directly-from-arrays) | — |
 
-<details>
-<summary><strong>Electron-density analysis: Python, command line, and supported inputs</strong></summary>
-
 ### Compute directly from an electron density
 
-For a VASP calculation:
-
-```python
-from py_chargemol import compute_ddec6, read_density, write_density_results
-
-grid = read_density("path/to/vasp/calculation")
-ddec = compute_ddec6(grid)
-qdr = ddec.compute_qdr()
-
-print(ddec.charges)
-print(ddec.analysis.atomic_dipoles)
-print(ddec.bonds.bond_orders)
-print(qdr.charges)
-
-# Optional: write DDEC, bond, radial-moment and QDR output files.
-write_density_results(ddec, "results", qdr=True)
-```
-
-The returned `DDECResult` also exposes `hirshfeld_charges`, `cm5_charges`,
-`radial_moments`, and `atomic_densities`. For nonperiodic systems, `ddec.moments`
-contains total molecular multipoles; for periodic systems it is `None`.
-
-For magnetic inputs, `ddec.spin.populations` contains atomic spin moments;
-`ddec.spin` is `None` when spin data are absent or spin analysis is disabled.
-Noncollinear inputs also provide `ddec.spin_gradients`. Isolated-atom WFX inputs
-can provide analytic explicit-electron radial moments for powers −1 through 4
-in `ddec.wavefunction_radial_moments`; this is `None` for unsupported cases.
-The bond result records the remaining population residual after density
-correction, also printed in the bond-order output.
-
-The command-line equivalent is:
+To run a complete analysis from the repository root, use the supplied triplet
+ozone wavefunction. With the default settings, this command writes the DDEC6
+charges, atomic spin moments, bond orders, and QDR charges to `results/ozone/`.
 
 ```bash
-py-chargemol analyze path/to/vasp/calculation --output-dir results
+py-chargemol analyze test/density_examples/ozone_triplet_PW91.wfx --output-dir results/ozone
 ```
 
-The command honors `charge type`, `compute bos`, and `print atomic densities`
-in `job_control.txt`; explicit command-line options take precedence.
-
-- `--method ddec3` selects the older charge-partitioning method and disables
-  QDR, which requires DDEC6. In Python, use `compute_ddec3(grid)`.
-- `--no-qdr` writes the density analysis without resorption.
-- `--atomic-densities` exports spherical atomic densities and radial integrals.
-  In Python, use `write_density_results(ddec, "results", atomic_densities=True)`.
-- `--no-bonds` skips bond orders, overlaps, radial moments, atomic-density
-  exports, and QDR. In Python, use `compute_ddec6(grid, compute_bos=False)`.
-
-For a charge-only Python calculation, use
-`compute_ddec6(grid, compute_bos=False, compute_spin=False)` to also skip spin
-partitioning and spin-gradient diagnostics, reducing memory use for magnetic
-inputs. `compute_spin=False` requires `compute_bos=False`.
-
-See `py-chargemol analyze --help` for charge, periodicity, and core-electron
-options. Output files with matching names are overwritten.
-
-#### Supported inputs
-
-| Source | Inputs |
-| --- | --- |
-| VASP 4/5 file formats | `AECCAR2` plus `CHGCAR` or `CHG`, and `POTCAR`; optional `AECCAR0`. Explicit core counts can replace `POTCAR` when the geometry names the elements. `CHGCAR` alone is insufficient. |
-| Gaussian WFX | Wavefunction with primitive coefficients, occupations, and optional effective-core-density functions. Tight Gaussian contributions are integrated analytically. |
-| Gaussian cube | Total electron density, or valence density with explicit core counts; optional separate total and spin-density files. |
-| XSF | Scalar valence density, spin-up/spin-down grids, or noncollinear spin components, with explicit core counts. |
-| Python arrays | A `DensityGrid` containing atomic numbers, positions, density, origin, voxel vectors (`steps`), and periodicity. Lengths are in bohr and density in electrons/bohr³. |
-
-`read_density` discovers conventional filenames and reads supported settings
-from `job_control.txt`. Explicit function arguments override those settings.
-For WFX inputs, core counts and periodicity come from wavefunction metadata;
-conflicting explicit overrides are rejected. An external atomic-density
-directory is unnecessary because the reference data are bundled. The individual
-`read_cube`, `read_vasp`, `read_wfx`, and `read_xsf` functions are also public.
-
-Like Chargemol, `read_wfx` evaluates diffuse Gaussian products on coarser
-nested grids and interpolates them onto the final grid.
-`read_wfx(path, interpolate_diffuse=False)` evaluates them directly on the
-final grid instead. This removes the diffuse-grid interpolation error at the
-cost of extra computation. It changes the ozone example's charges by about
-2e-4 e relative to the default, which follows Chargemol's interpolation.
-
-Cube coordinate units follow the signed voxel counts; electron density defaults
-to electrons/bohr³. XSF coordinates are in ångströms, with density also defaulting
-to electrons/bohr³. Reader options support explicit unit conversion, and
-`read_density` honors the original `onetep` and `e_per_angs3` density-format
-settings. Python `DensityGrid` arrays always use atomic units.
-
-For example, a periodic valence-density cube for water with an oxygen
-pseudopotential that replaces two core electrons is read with:
-
-```python
-from py_chargemol import compute_qdr_from_density, read_cube
-
-grid = read_cube(
-    "valence_density.cube",
-    density_kind="valence",
-    core_electrons=[2, 0, 0],  # atom order: O, H, H
-    periodic=(True, True, True),
-)
-qdr = compute_qdr_from_density(grid)
-```
-
-Core counts must match the actual pseudopotentials. For an all-electron cube,
-use `read_cube("total_density.cube")`. Set periodicity explicitly when needed.
-During analysis, the density integral is checked against the expected electron
-count. A discrepancy beyond the allowed tolerance raises an error; check the
-charge, units, core counts, and grid resolution.
-
-</details>
+The first three atom rows in `DDEC6_net_atomic_charges.xyz` give approximately
++0.215330, −0.107665, and −0.107665 e. For your own calculation, replace the
+WFX path with a density file or VASP calculation directory. The
+[density guide](https://github.com/LouieSlocombe/py-chargemol/blob/main/docs/density.md)
+covers the Python workflow, file discovery, units, core counts, output files,
+and electron-count errors.
 
 ### Compute QDR from Chargemol output
 
