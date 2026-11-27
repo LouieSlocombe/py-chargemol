@@ -155,6 +155,42 @@ default zero core counts. For a valence-only grid, supply `core_electrons`.
 When no core-density grid is supplied, the calculation uses bundled core
 reference densities for the requested element and integer core count.
 
+## Set convergence controls
+
+The initial core-weight fit allows 200 iterations by default. The subsequent
+core-density correction allows 40 iterations to bring each atom's assigned
+core population within `1e-5` electrons of its requested count. To give a
+difficult frame more time while keeping that tolerance, set the correction
+limit for that calculation.
+
+```python
+from py_chargemol import ConvergenceOptions, compute_ddec6
+
+options = ConvergenceOptions(core_max_iterations=200)
+result = compute_ddec6(grid, convergence=options)
+```
+
+`compute_ddec`, `compute_ddec3`, and `compute_qdr_from_density` accept the
+same `convergence` argument. The equivalent CLI command is
+`py-chargemol analyze SOURCE --core-max-iterations 200`. Use
+`weights_max_iterations` (`--weights-max-iterations`) for the initial core
+fit. Both limits must be positive integers.
+
+`charge_tolerance` (`--charge-tolerance`) must be finite and positive.
+It controls the core-weight population change, the maximum per-atom core
+residual, charge thresholds in DDEC6, and charge and spherical-density
+convergence in DDEC3. With bonds enabled, the same tolerance applies to the
+sum of absolute atomic population residuals in the bond-density correction.
+
+If the initial core weights reach their limit, the calculation emits a
+`RuntimeWarning` with the last population change and continues to the core
+correction. If the correction still misses its target, catch
+`py_chargemol.CoreConvergenceError` to inspect `iterations`, `tolerance`,
+and `residuals` (requested minus assigned core electrons for each atom).
+`worst_atoms` lists the zero-based indices outside tolerance, largest
+absolute residual first. DDEC3 reports unresolved valence partitions through
+`py_chargemol.DDEC3ConvergenceError`. Both exceptions inherit from `ValueError`.
+
 ## Choose results and output files
 
 The CLI writes to the current working directory by default. `--output-dir`

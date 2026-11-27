@@ -24,6 +24,7 @@ from py_chargemol.density._bond_kernels import (
     pair_shell_sums,
     spherical_shell_sums,
 )
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.grid import (
     CUTOFF,
     NSHELLS,
@@ -39,7 +40,6 @@ from py_chargemol.density.grid import (
     wrap_periodic_positions,
 )
 
-_CHARGE_TOLERANCE = 1e-5
 _DIMENSIONS = 3
 
 
@@ -234,6 +234,7 @@ def _correct_density(  # noqa: PLR0913, PLR0917
     populations: FloatArray,
     voxel_volume: float,
     near_nucleus_indices: Sequence[IntArray] | None,
+    charge_tolerance: float,
 ) -> _DensityCorrection:
     corrected = density.copy()
     sampled = shell_counts(samples)
@@ -261,7 +262,7 @@ def _correct_density(  # noqa: PLR0913, PLR0917
         averages, shell_populations = _spherical_average(
             corrected, weights, pseudodensity, samples, voxel_volume, sampled
         )
-        if np.sum(np.abs(residual)) < _CHARGE_TOLERANCE:
+        if np.sum(np.abs(residual)) < charge_tolerance:
             break
     return _DensityCorrection(
         corrected,
@@ -559,6 +560,7 @@ def compute_bond_orders(  # noqa: PLR0913
     pair_cutoff: float = 0.001,
     grid_steps: FloatArray | None = None,
     grid_origin: FloatArray | None = None,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> BondOrderResult:
     """Integrate DDEC overlaps and bond orders from a converged partition.
 
@@ -610,6 +612,7 @@ def compute_bond_orders(  # noqa: PLR0913
         populations,
         voxel_volume,
         near_nucleus_indices,
+        convergence.charge_tolerance,
     )
     vectors, total_vectors, minimum_density = _exchange_vectors(
         correction.spherical_average, samples, len(density), spherical_spin

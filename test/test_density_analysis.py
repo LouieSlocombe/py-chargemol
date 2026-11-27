@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from py_chargemol import (
+    ConvergenceOptions,
     DensityGrid,
     compute_ddec,
     compute_ddec3,
@@ -71,6 +72,44 @@ def test_density_to_qdr_can_solve_directly(
     )
     paths = write_density_results(result, tmp_path, qdr=True, qdr_solver="direct")
     assert "solved directly, in closed form" in paths["qdr"].read_text()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("core_max_iterations", 0),
+        ("weights_max_iterations", -1),
+        ("core_max_iterations", 1.5),
+        ("weights_max_iterations", True),
+        ("charge_tolerance", 0),
+        ("charge_tolerance", float("nan")),
+        ("charge_tolerance", float("inf")),
+        ("charge_tolerance", "1e-5"),
+        ("charge_tolerance", True),
+    ],
+)
+def test_convergence_rejects_invalid_controls(name: str, value: Any) -> None:
+    with pytest.raises(ValueError, match=name):
+        ConvergenceOptions(**{name: value})
+
+
+@pytest.mark.parametrize(
+    "compute", [compute_ddec6, compute_ddec3, compute_qdr_from_density]
+)
+def test_core_settings_reach_density_entry_points(compute: Callable[..., Any]) -> None:
+    # One sampled core electron needs several correction steps to reach two.
+    grid = DensityGrid(
+        atomic_numbers=np.array([3]),
+        positions=np.zeros((1, 3)),
+        origin=np.zeros(3),
+        steps=np.eye(3),
+        density=np.ones((1, 1, 1)),
+        core_density=np.ones((1, 1, 1)),
+        core_electrons=np.array([2]),
+    )
+    with pytest.raises(ValueError, match="core density could not be corrected"):
+        compute(grid, convergence=ConvergenceOptions(core_max_iterations=1))
+    np.testing.assert_allclose(compute(grid).charges, 0, atol=1e-12)
 
 
 def test_ddec3_analysis_is_available_and_does_not_masquerade_as_qdr(
@@ -179,7 +218,10 @@ def test_charge_only_analysis_skips_bonds_and_associated_densities(
         result.compute_qdr()
 
 
-def test_unresolved_bond_density_population_is_reported() -> None:
+@pytest.mark.parametrize(("tolerance", "iterations"), [(1e-5, 40), (0.06, 1)])
+def test_unresolved_bond_density_population_is_reported(
+    tolerance: float, iterations: int
+) -> None:
     density = np.zeros((7, 7, 7))
     density[3, 0, 0] = 0.95
     result = compute_ddec6(
@@ -190,10 +232,11 @@ def test_unresolved_bond_density_population_is_reported() -> None:
             origin=np.zeros(3),
             steps=np.eye(3),
             occupancy_correction=np.array([0.05]),
-        )
+        ),
+        convergence=ConvergenceOptions(charge_tolerance=tolerance),
     )
     np.testing.assert_allclose(result.charges, 0)
-    assert result.bonds.density_correction_iterations == 40
+    assert result.bonds.density_correction_iterations == iterations
     np.testing.assert_allclose(result.bonds.population_residual, 0.05)
     assert result.bonds.corrected_density.sum() == pytest.approx(0.95)
 
@@ -311,6 +354,29 @@ def test_analyze_cli_selects_the_qdr_solver(tmp_path: Path) -> None:
     text = (output / "QDR-DDEC6_point_charges.xyz").read_text()
     assert "solved directly, in closed form" in text
     assert "CG iterations" not in text
+
+
+def test_analyze_cli_sets_convergence_controls(tmp_path: Path) -> None:
+    header = "helium\ndensity\n1 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n2 0 0 0 0\n"
+    (tmp_path / "valence_density.cube").write_text(header + "0\n")
+    (tmp_path / "total_density.cube").write_text(header + "1\n")
+    args = [
+        "analyze",
+        str(tmp_path),
+        "--core-electrons",
+        "2",
+        "--no-bonds",
+        "--core-max-iterations",
+        "1",
+        "--output-dir",
+        str(tmp_path / "result"),
+    ]
+    assert main(args) == 1
+    with pytest.warns(RuntimeWarning, match="core weights did not converge within 1 "):
+        assert (
+            main([*args, "--charge-tolerance", "0.6", "--weights-max-iterations", "1"])
+            == 0
+        )
 
 
 def test_analyze_cli_reports_missing_input(

@@ -6,6 +6,7 @@ import numpy as np
 
 from py_chargemol import _jit
 from py_chargemol.density._kernels import reference_shell_sums
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.errors import DDEC3ConvergenceError
 from py_chargemol.density.grid import NSHELLS, SCALE, shell_counts
 from py_chargemol.density.partition import (
@@ -20,7 +21,6 @@ from py_chargemol.density.partition import (
 from py_chargemol.density.references import reference_densities
 
 _ZERO = 1e-10
-_CHARGE_TOLERANCE = 1e-5
 _REFERENCE_WEIGHT = 3 / 14
 _FIRST_RESHAPE_ITERATION = 4
 _MINIMUM_ITERATIONS = 10
@@ -116,14 +116,16 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     core_population: FloatArray,
     occupancy_correction: FloatArray,
     net_charge: float = 0.0,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> PartitionResult:
     """Partition a prepared total-density grid into DDEC3 atomic populations.
 
     Inputs have the same atomic-unit conventions as ``partition_ddec6``. Four
-    consecutive charge and spherical-density changes must fall below 1e-5,
-    after at least ten iterations. An unresolved partition raises
-    ``DDEC3ConvergenceError``.
+    consecutive charge and spherical-density changes must fall below the
+    charge tolerance, after at least ten iterations. An unresolved partition
+    raises ``DDEC3ConvergenceError``.
     """
+    tolerance = convergence.charge_tolerance
     valence_electrons = float(np.sum(atomic_numbers - core_electrons) - net_charge)
     if valence_electrons <= 0:
         msg = (
@@ -169,11 +171,11 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         )
         if iteration == 1:
             hirshfeld = charges.copy()
-        if iteration >= _MINIMUM_ITERATIONS and np.max(changes) < _CHARGE_TOLERANCE:
-            if np.any(populations < -_CHARGE_TOLERANCE):
+        if iteration >= _MINIMUM_ITERATIONS and np.max(changes) < tolerance:
+            if np.any(populations < -tolerance):
                 msg = "DDEC3 could not assign nonnegative valence populations"
                 raise DDEC3ConvergenceError(
-                    msg, np.minimum(populations, 0.0), iteration, _CHARGE_TOLERANCE
+                    msg, np.minimum(populations, 0.0), iteration, tolerance
                 )
             return PartitionResult(
                 charges=charges,
@@ -205,7 +207,7 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
                 ):
                     continue
                 weights[atom] = _reshape(sigma[atom], points[atom], tau[atom])
-                if slope[atom] > _CHARGE_TOLERANCE / 100:
+                if slope[atom] > tolerance / 100:
                     renormalization[atom] = max(
                         1, renormalization[atom] - 0.2 * populations[atom] / slope[atom]
                     )
@@ -214,5 +216,5 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
                 weights[atom] *= renormalization[atom]
     msg = f"DDEC3 atomic charges did not converge within {_MAX_ITERATIONS} iterations"
     raise DDEC3ConvergenceError(
-        msg, np.max(changes, axis=0), _MAX_ITERATIONS, _CHARGE_TOLERANCE
+        msg, np.max(changes, axis=0), _MAX_ITERATIONS, tolerance
     )

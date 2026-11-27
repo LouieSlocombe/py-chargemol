@@ -12,6 +12,7 @@ import numpy.typing as npt
 
 from py_chargemol import _jit
 from py_chargemol.density._kernels import partition_shell_sums
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
@@ -41,7 +42,6 @@ type FloatArray = npt.NDArray[np.float64]
 type IntArray = npt.NDArray[np.int64]
 
 _ZERO = 1e-10
-_CHARGE_TOLERANCE = 1e-5
 _FIRST_ITERATION = 4
 _PARTITION_STEPS = 7
 _TAIL_CONSTRAINT_THRESHOLD = 0.01
@@ -193,6 +193,7 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
     valence_electrons: float,
     reference_charges: FloatArray,
     counts: FloatArray,
+    charge_tolerance: float,
 ) -> FloatArray:
     total = pseudodensity(weights, samples, size)
     points, assigned, _, _ = _shell_statistics(
@@ -209,7 +210,7 @@ def _condition_references(  # noqa: PLR0913, PLR0917 -- Physical partitioning in
         - occupancy_correction
     )
     for atom in range(len(samples)):
-        if population[atom] > _CHARGE_TOLERANCE:
+        if population[atom] > charge_tolerance:
             sigma[atom] = np.maximum(sigma[atom] * target[atom] / population[atom], 0)
         sigma[atom] = monotonic_decay(sigma[atom], points[atom] * pixel_volume)
     return sigma
@@ -251,6 +252,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     core_population: FloatArray,
     occupancy_correction: FloatArray,
     net_charge: float = 0.0,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> PartitionResult:
     """Partition a prepared total-density grid into DDEC6 atomic populations.
 
@@ -289,6 +291,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         valence_electrons,
         reference_charges,
         counts,
+        convergence.charge_tolerance,
     )
     first, second = _tail_exponents(weights, samples, density.size)
     completed_steps = 3
@@ -322,14 +325,17 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         charges = atomic_numbers - core_electrons - populations
         max_change = float(np.max(np.abs(charges - previous_charges)))
         if iteration > _FIRST_ITERATION:
-            if np.any(populations < -_CHARGE_TOLERANCE):
+            if np.any(populations < -convergence.charge_tolerance):
                 update_kappa = True
-            if update_kappa and max(max_change, old_change) < _CHARGE_TOLERANCE:
+            if (
+                update_kappa
+                and max(max_change, old_change) < convergence.charge_tolerance
+            ):
                 update_kappa = False
                 renormalization.fill(1)
         if update_kappa:
             weights /= renormalization[:, None]
-            active = slope > _CHARGE_TOLERANCE / 100
+            active = slope > convergence.charge_tolerance / 100
             renormalization[active] = np.maximum(
                 1,
                 renormalization[active] * np.exp(-populations[active] / slope[active]),
@@ -339,7 +345,7 @@ def partition_ddec6(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
         else:
             completed_steps += 1
             if completed_steps == _PARTITION_STEPS:
-                if np.any(populations < -_CHARGE_TOLERANCE):
+                if np.any(populations < -convergence.charge_tolerance):
                     msg = "DDEC6 could not assign nonnegative valence populations"
                     raise ValueError(msg)
                 return PartitionResult(

@@ -20,6 +20,7 @@ from py_chargemol.density.analysis import (
     compute_ddec6,
     compute_qdr_from_density,
 )
+from py_chargemol.density.convergence import ConvergenceOptions
 from py_chargemol.density.errors import CoreConvergenceError, DDEC3ConvergenceError
 from py_chargemol.density.grid import DensityGrid
 from py_chargemol.density.output import write_density_results
@@ -42,6 +43,7 @@ from py_chargemol.qdr import (
 )
 
 __all__ = [
+    "ConvergenceOptions",
     "CoreConvergenceError",
     "DDEC3ConvergenceError",
     "DDEC6Analysis",

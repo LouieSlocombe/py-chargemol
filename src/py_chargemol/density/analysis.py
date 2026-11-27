@@ -7,6 +7,7 @@ import numpy as np
 from py_chargemol.ddec6 import DDEC6Analysis, OverlapPairs
 from py_chargemol.density.bonds import BondOrderResult, compute_bond_orders
 from py_chargemol.density.cm5 import compute_cm5
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.core import (
     CoreResult,
     dominant_occupancy_correction,
@@ -135,20 +136,36 @@ DDEC6Result = DDECResult
 
 
 def compute_ddec6(
-    grid: DensityGrid, *, compute_bos: bool = True, compute_spin: bool = True
+    grid: DensityGrid,
+    *,
+    compute_bos: bool = True,
+    compute_spin: bool = True,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> DDECResult:
     """Compute DDEC6 charges, atomic multipoles, spin moments and bonds."""
     return compute_ddec(
-        grid, method="ddec6", compute_bos=compute_bos, compute_spin=compute_spin
+        grid,
+        method="ddec6",
+        compute_bos=compute_bos,
+        compute_spin=compute_spin,
+        convergence=convergence,
     )
 
 
 def compute_ddec3(
-    grid: DensityGrid, *, compute_bos: bool = True, compute_spin: bool = True
+    grid: DensityGrid,
+    *,
+    compute_bos: bool = True,
+    compute_spin: bool = True,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> DDECResult:
     """Compute the older DDEC3 charge partition and its associated moments."""
     return compute_ddec(
-        grid, method="ddec3", compute_bos=compute_bos, compute_spin=compute_spin
+        grid,
+        method="ddec3",
+        compute_bos=compute_bos,
+        compute_spin=compute_spin,
+        convergence=convergence,
     )
 
 
@@ -158,6 +175,7 @@ def compute_ddec(
     method: str = "ddec6",
     compute_bos: bool = True,
     compute_spin: bool = True,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> DDECResult:
     """Compute DDEC populations, atomic multipoles, and bonds using NumPy.
 
@@ -170,6 +188,9 @@ def compute_ddec(
     point and set the peak memory of a charge-only analysis. Bond orders of a
     spin-polarized density depend on its spin partition, so skipping it
     requires ``compute_bos=False``.
+
+    Pass a ``ConvergenceOptions`` instance to change the core iteration limits
+    or charge tolerance for this calculation.
     """
     if method not in ("ddec6", "ddec3"):
         msg = "method must be 'ddec6' or 'ddec3'"
@@ -217,7 +238,12 @@ def compute_ddec(
     else:
         core_density = grid.core_density.ravel()
     core = partition_core(
-        core_density, core_counts, neutral, samples, grid.pixel_volume
+        core_density,
+        core_counts,
+        neutral,
+        samples,
+        grid.pixel_volume,
+        convergence=convergence,
     )
     total_density = grid.density.ravel() + core.density
     partitioner = partition_ddec6 if method == "ddec6" else partition_ddec3
@@ -238,6 +264,7 @@ def compute_ddec(
             core_population=core.populations,
             occupancy_correction=occupancy,
             net_charge=grid.net_charge,
+            convergence=convergence,
         )
     )
     dipoles, quadrupoles = _multipoles(grid, samples, total_density, partition, core)
@@ -292,6 +319,7 @@ def compute_ddec(
             spherical_spin=None if spin is None else spin.spherical_average,
             grid_steps=grid.steps,
             grid_origin=grid.origin,
+            convergence=convergence,
         )
         radial_moments = _radial_moments(
             samples, bonds.corrected_density, partition, grid.pixel_volume
@@ -401,10 +429,13 @@ def _core_only_spin_inputs(  # noqa: PLR0913, PLR0917 -- Core remapping and spin
 
 
 def compute_qdr_from_density(
-    grid: DensityGrid, *, solver: QDRSolver = "cg"
+    grid: DensityGrid,
+    *,
+    solver: QDRSolver = "cg",
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> QDRResult:
     """Compute DDEC6 and then QDR point charges directly from a density grid."""
-    return compute_ddec6(grid).compute_qdr(solver=solver)
+    return compute_ddec6(grid, convergence=convergence).compute_qdr(solver=solver)
 
 
 def _assigned(

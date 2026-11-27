@@ -16,6 +16,7 @@ from py_chargemol.density._kernels import (
     assigned_core_values,
     core_shell_sums,
 )
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.errors import CoreConvergenceError
 from py_chargemol.density.grid import (
     NSHELLS,
@@ -37,9 +38,6 @@ __all__ = [
 ]
 
 _MINIMUM_CORE_ITERATIONS = 6
-_WEIGHTS_MAX_ITERATIONS = 200
-_CORE_MAX_ITERATIONS = 40
-_CHARGE_TOLERANCE = 1e-5
 
 
 @dataclass(frozen=True)
@@ -52,14 +50,17 @@ class CoreResult:
     pseudodensity: np.ndarray
 
 
-def partition_core(
+def partition_core(  # noqa: PLR0913 -- Core inputs and optional convergence settings.
     density: np.ndarray,
     core_electrons: np.ndarray,
     neutral: np.ndarray,
     samples: Sequence[AtomicSample],
     pixel_volume: float,
+    *,
+    convergence: ConvergenceOptions = DEFAULT_CONVERGENCE,
 ) -> CoreResult:
     """Fit core weights and correct the density to the specified occupations."""
+    tolerance = convergence.charge_tolerance
     density = np.minimum(np.asarray(density).ravel(), 30.0 / pixel_volume)
     weights = neutral.copy()
     weights[core_electrons == 0] = 0
@@ -71,11 +72,11 @@ def partition_core(
     totals, counts, averages = _local_averages(
         density, weights, pseudo, samples, sampled
     )
-    for iteration in range(_WEIGHTS_MAX_ITERATIONS):
+    for iteration in range(convergence.weights_max_iterations):
         updated = totals * pixel_volume
         change = np.max(np.abs(updated - populations))
         populations = updated
-        if iteration + 1 >= _MINIMUM_CORE_ITERATIONS and change < _CHARGE_TOLERANCE:
+        if iteration + 1 >= _MINIMUM_CORE_ITERATIONS and change < tolerance:
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
@@ -85,15 +86,15 @@ def partition_core(
     else:
         change = np.max(np.abs(totals * pixel_volume - populations))
         warnings.warn(
-            f"core weights did not converge within {_WEIGHTS_MAX_ITERATIONS} "
-            f"iterations (last population change={change:.8g}, "
-            f"tolerance={_CHARGE_TOLERANCE:.8g})",
+            f"core weights did not converge within {convergence.weights_max_iterations}"
+            f" iterations (last population change={change:.8g}, "
+            f"tolerance={tolerance:.8g})",
             RuntimeWarning,
             stacklevel=2,
         )
     populations = totals * pixel_volume
 
-    for _ in range(_CORE_MAX_ITERATIONS):
+    for _ in range(convergence.core_max_iterations):
         correction = core_electrons - populations
         adjusted = np.zeros_like(density)
         # Each atom's assigned core density is made from the current density,
@@ -117,16 +118,19 @@ def partition_core(
             density, weights, pseudo, samples, sampled
         )
         populations = totals * pixel_volume
-        if np.max(np.abs(core_electrons - populations)) < _CHARGE_TOLERANCE:
+        if np.max(np.abs(core_electrons - populations)) < tolerance:
             break
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-    if np.max(np.abs(core_electrons - populations)) >= _CHARGE_TOLERANCE:
+    if np.max(np.abs(core_electrons - populations)) >= tolerance:
         msg = (
             "core density could not be corrected to the requested electron populations"
         )
         raise CoreConvergenceError(
-            msg, core_electrons - populations, _CORE_MAX_ITERATIONS, _CHARGE_TOLERANCE
+            msg,
+            core_electrons - populations,
+            convergence.core_max_iterations,
+            tolerance,
         )
     return CoreResult(density, populations, weights, pseudo)
 

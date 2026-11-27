@@ -8,6 +8,7 @@ from pathlib import Path
 
 from py_chargemol import __version__
 from py_chargemol.density.analysis import compute_ddec
+from py_chargemol.density.convergence import DEFAULT_CONVERGENCE, ConvergenceOptions
 from py_chargemol.density.output import write_density_results
 from py_chargemol.density.workflow import JobControl, read_density, read_job_control
 from py_chargemol.qdr.run import LOG_FILE, OUTPUT_FILE, run_qdr
@@ -87,6 +88,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument("--charge", type=float, help="total system charge in e")
     analyze.add_argument(
+        "--core-max-iterations",
+        type=int,
+        default=DEFAULT_CONVERGENCE.core_max_iterations,
+        help="maximum core-population correction iterations (default: %(default)s)",
+    )
+    analyze.add_argument(
+        "--weights-max-iterations",
+        type=int,
+        default=DEFAULT_CONVERGENCE.weights_max_iterations,
+        help="maximum initial core-weight fitting iterations (default: %(default)s)",
+    )
+    analyze.add_argument(
+        "--charge-tolerance",
+        type=float,
+        default=DEFAULT_CONVERGENCE.charge_tolerance,
+        help="DDEC charge convergence tolerance (default: %(default)g)",
+    )
+    analyze.add_argument(
         "--periodic",
         nargs=3,
         type=int,
@@ -149,6 +168,11 @@ def _analyze(arguments: argparse.Namespace) -> int:
         a, b, c = arguments.periodic
         periodic = bool(a), bool(b), bool(c)
     try:
+        convergence = ConvergenceOptions(
+            core_max_iterations=arguments.core_max_iterations,
+            weights_max_iterations=arguments.weights_max_iterations,
+            charge_tolerance=arguments.charge_tolerance,
+        )
         directory = (
             arguments.source if arguments.source.is_dir() else arguments.source.parent
         )
@@ -175,7 +199,9 @@ def _analyze(arguments: argparse.Namespace) -> int:
             core_electrons=arguments.core_electrons,
             density_kind=arguments.density_kind,
         )
-        result = compute_ddec(grid, method=method, compute_bos=compute_bos)
+        result = compute_ddec(
+            grid, method=method, compute_bos=compute_bos, convergence=convergence
+        )
         paths = write_density_results(
             result,
             arguments.output_dir,
