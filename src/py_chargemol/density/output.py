@@ -1,8 +1,12 @@
 """Write density analyses in the familiar Chargemol XYZ and overlap layouts."""
 
+import sqlite3
 from collections.abc import Iterable
+from contextlib import closing, suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from stat import S_IMODE
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
@@ -307,7 +311,8 @@ def write_density_results(
     and radial-moment files are omitted. ``qdr=True`` also writes resorbed charges for
     a DDEC6 analysis, solved with ``qdr_solver`` (see ``DDECResult.compute_qdr``).
     ``atomic_densities=True`` writes spherical atomic densities with radial
-    integration weights. Existing files with those names are replaced.
+    integration weights. Files are replaced atomically. The main DDEC charges
+    file appears after every requested output is complete.
     """
     if result.method not in {"ddec6", "ddec3"}:
         msg = "result method must be ddec6 or ddec3"
@@ -351,9 +356,28 @@ def write_density_results(
         )
     destination = Path(directory)
     destination.mkdir(parents=True, exist_ok=True)
-    outputs = {}
-    for key, (filename, text) in texts.items():
-        path = destination / filename
-        path.write_text(text, encoding="utf-8", newline="\n")
-        outputs[key] = path
+    outputs = {key: destination / filename for key, (filename, _) in texts.items()}
+    charges = outputs["charges"]
+    with TemporaryDirectory(dir=destination, prefix=".py-chargemol-") as temporary:
+        stage = Path(temporary)
+        for filename, text in texts.values():
+            (stage / filename).write_text(text, encoding="utf-8", newline="\n")
+        try:
+            # A SQLite write lock serializes publication across processes on all
+            # supported platforms. The OS releases it even if the process dies.
+            with closing(sqlite3.connect(destination / ".py-chargemol.lock")) as lock:
+                lock.execute("PRAGMA journal_mode = MEMORY")
+                lock.execute("BEGIN IMMEDIATE")
+                for path in outputs.values():
+                    with suppress(FileNotFoundError):
+                        (stage / path.name).chmod(S_IMODE(path.stat().st_mode))
+                # Invalidate the previous run before changing any companion file.
+                charges.unlink(missing_ok=True)
+                for path in outputs.values():
+                    if path != charges:
+                        (stage / path.name).replace(path)
+                (stage / charges.name).replace(charges)
+        except sqlite3.Error as error:
+            msg = f"Could not lock density output directory {destination}: {error}"
+            raise OSError(msg) from error
     return outputs

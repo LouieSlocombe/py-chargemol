@@ -199,6 +199,13 @@ the destination and returns a dictionary of paths for this run. Files of
 the same name are overwritten. Use a separate directory per calculation to
 keep outputs from earlier runs with different options apart.
 
+Batch jobs can use `METHOD_net_atomic_charges.xyz` as the completion signal.
+The writer stages every requested file in the destination filesystem, then
+replaces each file atomically and publishes the charges file last. If staging
+fails, the previous result is still complete. Once publication begins, an
+interruption leaves the charges file absent until a successful retry. A
+shared hidden file, `.py-chargemol.lock`, coordinates writers in the directory.
+
 In the table, `METHOD` stands for `DDEC6` or `DDEC3`.
 
 | Python quantity | Filename | When written |

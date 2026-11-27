@@ -1,8 +1,12 @@
 """Interoperability of newly generated DDEC files with the existing QDR API."""
 
+import errno
+import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
+from stat import S_IMODE
 
 import numpy as np
 import pytest
@@ -206,3 +210,78 @@ def test_unknown_method_does_not_write_files(
     with pytest.raises(ValueError, match="method must be"):
         write_density_results(replace(result, method="unknown"), tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("rerun", [False, True])
+def test_partial_write_leaves_published_files_intact(
+    result: DDECResult, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rerun: bool
+) -> None:
+    if rerun:
+        write_density_results(result, tmp_path)
+    before = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    write_text = Path.write_text
+
+    def fail_mid_write(path: Path, data: str, *, encoding: str, newline: str) -> int:
+        if path.name == "CM5_net_atomic_charges.xyz":
+            write_text(path, data[:5], encoding=encoding, newline=newline)
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return write_text(path, data, encoding=encoding, newline=newline)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "write_text", fail_mid_write)
+        with pytest.raises(OSError, match="No space left"):
+            write_density_results(result, tmp_path)
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
+@pytest.mark.parametrize("rerun", [False, True])
+def test_charges_mark_completion_after_interrupted_publication(
+    result: DDECResult, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rerun: bool
+) -> None:
+    charges = tmp_path / "DDEC6_net_atomic_charges.xyz"
+    if rerun:
+        write_density_results(result, tmp_path)
+    publish = Path.replace
+    published = []
+
+    def interrupt_publication(source: Path, target: Path) -> Path:
+        assert not charges.exists()
+        if target.name == "Hirshfeld_net_atomic_charges.xyz":
+            # A second process cannot overwrite the first writer's companions.
+            with (
+                closing(
+                    sqlite3.connect(tmp_path / ".py-chargemol.lock", timeout=0)
+                ) as contender,
+                pytest.raises(sqlite3.OperationalError, match="locked"),
+            ):
+                contender.execute("BEGIN IMMEDIATE")
+            raise OSError("interrupted publication")
+        published.append(target)
+        return publish(source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "replace", interrupt_publication)
+        with pytest.raises(OSError, match="interrupted publication"):
+            write_density_results(result, tmp_path)
+    assert published == [tmp_path / "CM5_net_atomic_charges.xyz"]
+    assert not charges.exists()
+    assert not any(path.is_dir() for path in tmp_path.iterdir())
+    published[0].chmod(0o640)
+    mode = S_IMODE(published[0].stat().st_mode)
+    paths = write_density_results(result, tmp_path)
+    assert all(path.is_file() for path in paths.values())
+    assert S_IMODE(paths["cm5"].stat().st_mode) == mode
+    np.testing.assert_allclose(
+        read_ddec6_net_atomic_charges(charges).net_charges, result.analysis.net_charges
+    )
+
+
+def test_publication_lock_error_preserves_existing_output(
+    result: DDECResult, tmp_path: Path
+) -> None:
+    charges = tmp_path / "DDEC6_net_atomic_charges.xyz"
+    charges.write_bytes(b"previous analysis")
+    (tmp_path / ".py-chargemol.lock").mkdir()
+    with pytest.raises(OSError, match="Could not lock density output directory"):
+        write_density_results(result, tmp_path)
+    assert charges.read_bytes() == b"previous analysis"
