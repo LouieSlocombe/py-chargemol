@@ -18,7 +18,7 @@ from py_chargemol import calculate_qdr
 
 result = calculate_qdr("test/worked_examples/CO_molecule")
 print(result.charges.round(6))  # [-0.003964  0.003964]
-print(result.atomic_dipoles)    # residual atomic dipoles, in e·bohr
+print(result.atomic_dipoles)  # residual atomic dipoles, in e·bohr
 ```
 
 To produce the XYZ file and run log with the CLI, give each an output path
@@ -108,7 +108,9 @@ from py_chargemol import (
 )
 
 co = Path("test/worked_examples/CO_molecule")
-analysis = read_ddec6_net_atomic_charges(co / "DDEC6_even_tempered_net_atomic_charges.xyz")
+analysis = read_ddec6_net_atomic_charges(
+    co / "DDEC6_even_tempered_net_atomic_charges.xyz"
+)
 pairs = read_overlap_populations(co / "overlap_populations_and_contact_exchanges.txt")
 result = compute_qdr_charges(analysis, pairs)
 ```

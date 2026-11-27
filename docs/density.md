@@ -15,10 +15,10 @@ from py_chargemol import compute_ddec6, read_density, write_density_results
 
 grid = read_density("test/density_examples/ozone_triplet_PW91.wfx")
 result = compute_ddec6(grid)
-print(result.charges.round(6))          # [ 0.21533  -0.107665 -0.107665]
-print(result.spin.populations.sum())    # approximately 2 unpaired electrons
+print(result.charges.round(6))  # [ 0.21533  -0.107665 -0.107665]
+print(result.spin.populations.sum())  # approximately 2 unpaired electrons
 paths = write_density_results(result, "results/ozone", qdr=True)
-print(paths["qdr"])                     # results/ozone/QDR-DDEC6_point_charges.xyz
+print(paths["qdr"])  # results/ozone/QDR-DDEC6_point_charges.xyz
 ```
 
 Use `result.compute_qdr().charges` to get QDR point charges in memory from
