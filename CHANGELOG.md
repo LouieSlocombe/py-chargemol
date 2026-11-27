@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.0 — 2026-11-27
+
+### Added
+
+- Set the core correction limit, core-weight iteration limit, and charge
+  tolerance per calculation with `ConvergenceOptions`. The `analyze` CLI
+  exposes the same controls through `--core-max-iterations`,
+  `--weights-max-iterations`, and `--charge-tolerance`. [#18](https://github.com/LouieSlocombe/py-chargemol/issues/18)
+- Inspect `CoreConvergenceError` and `DDEC3ConvergenceError` for per-atom
+  residuals, affected atom indices, the iteration count, and tolerance.
+  Both inherit from `ValueError`. A core-weight fit that reaches its limit
+  emits a `RuntimeWarning` with its last population change. [#19](https://github.com/LouieSlocombe/py-chargemol/issues/19)
+- Follow worked examples for density inputs, job controls, DDEC outputs,
+  and QDR calculations from files or arrays. The source distribution
+  includes both guides and their example data.
+
+### Fixed
+
+- Accelerate slowly converging core corrections for closely spaced atoms.
+  Three synthetic grids that previously took 152, 339, and 385 corrections
+  now meet the same per-atom tolerance of `1e-5` electrons within the
+  default 40 iterations. [#17](https://github.com/LouieSlocombe/py-chargemol/issues/17)
+- Replace density output files atomically and publish the DDEC charges file
+  last. Batch jobs can use its presence to detect a complete set of
+  requested outputs after an interrupted write or retry. [#20](https://github.com/LouieSlocombe/py-chargemol/issues/20)
+
 ## 1.1.0 — 2026-11-06
 
 This release adds QDR and WFX calculation options, speeds up density analysis,
