@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from py_chargemol import DDEC3ConvergenceError
 from py_chargemol.density.cm5 import compute_cm5
 from py_chargemol.density.ddec3 import _reshape, partition_ddec3
 from py_chargemol.density.partition import partition_ddec6
@@ -95,7 +96,7 @@ def test_ddec3_rejects_unresolved_core_population_constraints(
 ) -> None:
     # A core-rich Li site cannot surrender its two core electrons to H. On an
     # inadequate two-point grid, that constraint can stall or falsely converge.
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(DDEC3ConvergenceError, match=message) as exc:
         partition_ddec3(
             atomic_numbers=np.array([3, 1]),
             density=np.array([first_density, 4 - first_density]),
@@ -108,6 +109,12 @@ def test_ddec3_rejects_unresolved_core_population_constraints(
             core_population=np.array([2, 0]),
             occupancy_correction=np.zeros(2),
         )
+    error = exc.value
+    assert error.iterations > 0
+    assert error.tolerance == 1e-5
+    assert error.residuals.shape == (2,)
+    assert error.worst_atoms[0] == np.argmax(np.abs(error.residuals))
+    assert np.max(np.abs(error.residuals)) >= error.tolerance
 
 
 def test_periodic_cm5_matches_shipped_nacl_reference() -> None:

@@ -4,6 +4,7 @@ The equations follow Chargemol's September 2017 core iterator by Thomas A.
 Manz and Nidia Gabaldon Limas, evaluated on NumPy arrays.
 """
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -15,6 +16,7 @@ from py_chargemol.density._kernels import (
     assigned_core_values,
     core_shell_sums,
 )
+from py_chargemol.density.errors import CoreConvergenceError
 from py_chargemol.density.grid import (
     NSHELLS,
     SCALE,
@@ -27,6 +29,7 @@ from py_chargemol.density.grid import (
 )
 
 __all__ = [
+    "CoreConvergenceError",
     "CoreResult",
     "dominant_occupancy_correction",
     "partition_core",
@@ -34,6 +37,8 @@ __all__ = [
 ]
 
 _MINIMUM_CORE_ITERATIONS = 6
+_WEIGHTS_MAX_ITERATIONS = 200
+_CORE_MAX_ITERATIONS = 40
 _CHARGE_TOLERANCE = 1e-5
 
 
@@ -66,7 +71,7 @@ def partition_core(
     totals, counts, averages = _local_averages(
         density, weights, pseudo, samples, sampled
     )
-    for iteration in range(200):
+    for iteration in range(_WEIGHTS_MAX_ITERATIONS):
         updated = totals * pixel_volume
         change = np.max(np.abs(updated - populations))
         populations = updated
@@ -77,9 +82,18 @@ def partition_core(
         totals, counts, averages = _local_averages(
             density, weights, pseudo, samples, sampled
         )
+    else:
+        change = np.max(np.abs(totals * pixel_volume - populations))
+        warnings.warn(
+            f"core weights did not converge within {_WEIGHTS_MAX_ITERATIONS} "
+            f"iterations (last population change={change:.8g}, "
+            f"tolerance={_CHARGE_TOLERANCE:.8g})",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     populations = totals * pixel_volume
 
-    for _ in range(40):
+    for _ in range(_CORE_MAX_ITERATIONS):
         correction = core_electrons - populations
         adjusted = np.zeros_like(density)
         # Each atom's assigned core density is made from the current density,
@@ -111,7 +125,9 @@ def partition_core(
         msg = (
             "core density could not be corrected to the requested electron populations"
         )
-        raise ValueError(msg)
+        raise CoreConvergenceError(
+            msg, core_electrons - populations, _CORE_MAX_ITERATIONS, _CHARGE_TOLERANCE
+        )
     return CoreResult(density, populations, weights, pseudo)
 
 

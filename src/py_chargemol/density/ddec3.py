@@ -6,6 +6,7 @@ import numpy as np
 
 from py_chargemol import _jit
 from py_chargemol.density._kernels import reference_shell_sums
+from py_chargemol.density.errors import DDEC3ConvergenceError
 from py_chargemol.density.grid import NSHELLS, SCALE, shell_counts
 from py_chargemol.density.partition import (
     AtomicSample,
@@ -23,6 +24,7 @@ _CHARGE_TOLERANCE = 1e-5
 _REFERENCE_WEIGHT = 3 / 14
 _FIRST_RESHAPE_ITERATION = 4
 _MINIMUM_ITERATIONS = 10
+_MAX_ITERATIONS = 2000
 
 
 def _reference_averages(  # noqa: PLR0913, PLR0917 -- Physical radial averages.
@@ -119,11 +121,15 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
 
     Inputs have the same atomic-unit conventions as ``partition_ddec6``. Four
     consecutive charge and spherical-density changes must fall below 1e-5,
-    after at least ten iterations; unconverged calculations raise ``ValueError``.
+    after at least ten iterations. An unresolved partition raises
+    ``DDEC3ConvergenceError``.
     """
     valence_electrons = float(np.sum(atomic_numbers - core_electrons) - net_charge)
     if valence_electrons <= 0:
-        msg = "DDEC3 partitioning requires a positive number of valence electrons"
+        msg = (
+            "DDEC3 partitioning requires a positive number of valence electrons, "
+            f"got {valence_electrons:g} for net_charge={net_charge:g}"
+        )
         raise ValueError(msg)
     references = reference_densities(atomic_numbers, np.zeros(len(samples)))
     weights = references.copy()
@@ -133,10 +139,10 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
     reference_charges = np.zeros(len(samples))
     hirshfeld = np.zeros(len(samples))
     renormalization = np.ones(len(samples))
-    charge_changes = [1.0] * 4
-    density_changes = [0.1] * 4
+    # Convergence requires four consecutive small changes on every atom.
+    changes = np.zeros((4, len(samples)))
     counts = shell_counts(samples)
-    for iteration in range(1, 2001):
+    for iteration in range(1, _MAX_ITERATIONS + 1):
         total = pseudodensity(weights, samples, density.size)
         points, assigned, _, weighted_density = _shell_statistics(
             weights, samples, density, total, counts
@@ -157,23 +163,18 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
             valence_electrons,
         )
         charges = atomic_numbers - core_electrons - populations
-        charge_changes = [
-            float(np.max(np.abs(populations - old_population))),
-            *charge_changes[:3],
-        ]
-        density_changes = [
-            float(np.max(np.abs(spherical - old_spherical))),
-            *density_changes[:3],
-        ]
+        changes[(iteration - 1) % len(changes)] = np.maximum(
+            np.abs(populations - old_population),
+            np.max(np.abs(spherical - old_spherical), axis=1),
+        )
         if iteration == 1:
             hirshfeld = charges.copy()
-        if (
-            iteration >= _MINIMUM_ITERATIONS
-            and max(*charge_changes, *density_changes) < _CHARGE_TOLERANCE
-        ):
+        if iteration >= _MINIMUM_ITERATIONS and np.max(changes) < _CHARGE_TOLERANCE:
             if np.any(populations < -_CHARGE_TOLERANCE):
                 msg = "DDEC3 could not assign nonnegative valence populations"
-                raise ValueError(msg)
+                raise DDEC3ConvergenceError(
+                    msg, np.minimum(populations, 0.0), iteration, _CHARGE_TOLERANCE
+                )
             return PartitionResult(
                 charges=charges,
                 weights=weights,
@@ -211,5 +212,7 @@ def partition_ddec3(  # noqa: PLR0913 -- Explicit physical inputs to the partiti
                 else:
                     renormalization[atom] = 1
                 weights[atom] *= renormalization[atom]
-    msg = "DDEC3 atomic charges did not converge within 2000 iterations"
-    raise ValueError(msg)
+    msg = f"DDEC3 atomic charges did not converge within {_MAX_ITERATIONS} iterations"
+    raise DDEC3ConvergenceError(
+        msg, np.max(changes, axis=0), _MAX_ITERATIONS, _CHARGE_TOLERANCE
+    )

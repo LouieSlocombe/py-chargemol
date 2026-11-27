@@ -1,8 +1,11 @@
 """Core population correction and dominant-atom grid assignment."""
 
+import pickle
+
 import numpy as np
 import pytest
 
+from py_chargemol import CoreConvergenceError
 from py_chargemol.density.core import (
     dominant_occupancy_correction,
     partition_core,
@@ -70,10 +73,24 @@ def test_atoms_without_core_electrons_have_zero_core_density() -> None:
 
 
 def test_missing_core_support_fails_instead_of_returning_wrong_populations() -> None:
-    with pytest.raises(ValueError, match="could not be corrected"):
+    with pytest.raises(
+        CoreConvergenceError, match=r"max \|residual\|=4 at atom index 2"
+    ) as exc:
         partition_core(
-            np.zeros(2), np.array([2]), np.ones((1, 100)), [_sample([0, 1], [0, 1])], 1
+            np.zeros(2),
+            np.array([2, 0, 4]),
+            np.ones((3, 100)),
+            [_sample([0, 1], [0, 1])] * 3,
+            1,
         )
+    # ProcessPoolExecutor pickles exceptions on their way back from workers.
+    error = pickle.loads(pickle.dumps(exc.value))  # noqa: S301 -- local round trip
+    assert isinstance(error, CoreConvergenceError)
+    np.testing.assert_array_equal(error.residuals, [2, 0, 4])
+    np.testing.assert_array_equal(error.worst_atoms, [2, 0])
+    assert error.iterations == 40
+    assert error.tolerance == 1e-5
+    assert str(error) == str(exc.value)
 
 
 def test_dominant_correction_uses_nearest_image_and_preserves_ties() -> None:
@@ -110,7 +127,12 @@ def test_unresolvable_overlapping_cores_fail_with_a_clear_error() -> None:
         origin=origin,
         steps=steps,
     )
-    with pytest.raises(ValueError, match="core density could not be corrected"):
+    with (
+        pytest.warns(RuntimeWarning, match=r"200 iterations \(last population change="),
+        pytest.raises(
+            CoreConvergenceError, match="core density could not be corrected"
+        ),
+    ):
         partition_core(
             density,
             np.array([2, 10]),
