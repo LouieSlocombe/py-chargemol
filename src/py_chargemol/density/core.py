@@ -38,6 +38,8 @@ __all__ = [
 ]
 
 _MINIMUM_CORE_ITERATIONS = 6
+_MAX_EXTRAPOLATION = 1000.0
+_MAX_REFINEMENT_FRACTION = 0.01
 
 
 @dataclass(frozen=True)
@@ -94,45 +96,157 @@ def partition_core(  # noqa: PLR0913 -- Core inputs and optional convergence set
         )
     populations = totals * pixel_volume
 
-    for _ in range(convergence.core_max_iterations):
+    previous_weights = weights
+    previous_residual = core_electrons - populations
+    for iteration in range(convergence.core_max_iterations):
         correction = core_electrons - populations
-        adjusted = np.zeros_like(density)
-        # Each atom's assigned core density is made from the current density,
-        # weights and pseudodensity, one atom at a time.
-        inverse = reciprocal(pseudo)
-        for atom, (sample, delta) in enumerate(zip(samples, correction, strict=True)):
-            values = _assigned(density, weights[atom], inverse, sample)
-            sum_cubes = np.sum(values**3)
-            largest = np.max(values, initial=0.0)
-            factor = 0.0
-            if sum_cubes > ZERO**3 and largest > ZERO:
-                factor = min(delta / (sum_cubes * pixel_volume), 0.25 / largest**2)
-            if _jit.ENABLED:
-                add_corrected_core(values, sample.indices, factor, ZERO**2, adjusted)
-            else:
-                significant = np.where(values > ZERO**2, values, 0.0)
-                corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
-                np.add.at(adjusted, sample.indices, corrected)
-        density = adjusted
+        adjusted = _corrected_density(
+            density, weights, pseudo, samples, correction, pixel_volume=pixel_volume
+        )
         totals, counts, averages = _local_averages(
-            density, weights, pseudo, samples, sampled
+            adjusted, weights, pseudo, samples, sampled
         )
         populations = totals * pixel_volume
-        if np.max(np.abs(core_electrons - populations)) < tolerance:
-            break
+        residual = core_electrons - populations
+        if np.max(np.abs(residual)) < tolerance:
+            return CoreResult(adjusted, populations, weights, pseudo)
+        if iteration + 1 >= _MINIMUM_CORE_ITERATIONS:
+            step = _tail_step(previous_residual, correction, residual, tolerance)
+            if step:
+                # Extrapolate both fields that produced the measured occupations.
+                trial = _check_trial(
+                    _extrapolate(density, adjusted, step),
+                    _decaying_weights(
+                        _extrapolate(previous_weights, weights, step), counts
+                    ),
+                    samples,
+                    pixel_volume,
+                    core_electrons,
+                    tolerance=tolerance,
+                    ordinary_density=(
+                        adjusted
+                        if iteration + 1 >= DEFAULT_CONVERGENCE.core_max_iterations
+                        else None
+                    ),
+                )
+                if trial is not None:
+                    return trial
+        density = adjusted
+        previous_weights, previous_residual = weights, correction
         weights = _decaying_weights(averages, counts)
         pseudo = sum_radial_weights(weights, samples, len(density))
-    if np.max(np.abs(core_electrons - populations)) >= tolerance:
-        msg = (
-            "core density could not be corrected to the requested electron populations"
+    msg = "core density could not be corrected to the requested electron populations"
+    raise CoreConvergenceError(
+        msg, core_electrons - populations, convergence.core_max_iterations, tolerance
+    )
+
+
+def _corrected_density(  # noqa: PLR0913 -- One correction of the sampled core grid.
+    density: np.ndarray,
+    weights: np.ndarray,
+    pseudo: np.ndarray,
+    samples: Sequence[AtomicSample],
+    correction: np.ndarray,
+    *,
+    pixel_volume: float,
+) -> np.ndarray:
+    """Adjust each atom's assigned core density and sum it back onto the grid."""
+    adjusted = np.zeros_like(density)
+    inverse = reciprocal(pseudo)
+    for atom, (sample, delta) in enumerate(zip(samples, correction, strict=True)):
+        values = _assigned(density, weights[atom], inverse, sample)
+        sum_cubes = np.sum(values**3)
+        largest = np.max(values, initial=0.0)
+        factor = 0.0
+        if sum_cubes > ZERO**3 and largest > ZERO:
+            factor = min(delta / (sum_cubes * pixel_volume), 0.25 / largest**2)
+        if _jit.ENABLED:
+            add_corrected_core(values, sample.indices, factor, ZERO**2, adjusted)
+        else:
+            significant = np.where(values > ZERO**2, values, 0.0)
+            corrected = significant / np.sqrt(1.0 - 2.0 * factor * significant**2)
+            np.add.at(adjusted, sample.indices, corrected)
+    return adjusted
+
+
+def _tail_step(
+    previous: np.ndarray, current: np.ndarray, residual: np.ndarray, tolerance: float
+) -> float:
+    """Estimate how many steps remain along a linearly contracting residual.
+
+    For a single geometric mode, residual + step * change vanishes. Fit that
+    scalar by least squares and require the preceding pair of residuals to
+    predict convergence with the same step before evaluating another grid.
+    """
+    change = residual - current
+    squared_change = float(np.dot(change, change))
+    projection = -float(np.dot(residual, change))
+    if not projection > squared_change > 0:
+        return 0.0
+    step = min(projection, _MAX_EXTRAPOLATION * squared_change) / squared_change
+    predicted = max(
+        np.max(np.abs(residual + step * change)),
+        np.max(np.abs(current + step * (current - previous))),
+    )
+    return step if predicted < tolerance else 0.0
+
+
+def _extrapolate(previous: np.ndarray, current: np.ndarray, step: float) -> np.ndarray:
+    """Continue the latest update using one work array for a full grid."""
+    trial: np.ndarray = current - previous
+    trial *= step
+    trial += current
+    return trial
+
+
+def _check_trial(  # noqa: PLR0913 -- Reintegrate trial fields at the requested tolerance.
+    density: np.ndarray,
+    weights: np.ndarray,
+    samples: Sequence[AtomicSample],
+    pixel_volume: float,
+    core_electrons: np.ndarray,
+    *,
+    tolerance: float,
+    ordinary_density: np.ndarray | None,
+) -> CoreResult | None:
+    """Independently verify the extrapolated fields before accepting a result."""
+    pseudo = sum_radial_weights(weights, samples, len(density))
+    np.maximum(density, 0, out=density)
+    density[pseudo <= ZERO] = 0
+    inverse = reciprocal(pseudo)
+
+    def integrate(field: np.ndarray) -> np.ndarray:
+        return np.array(
+            [
+                np.sum(_assigned(field, radial, inverse, sample)) * pixel_volume
+                for radial, sample in zip(weights, samples, strict=True)
+            ]
         )
-        raise CoreConvergenceError(
-            msg,
-            core_electrons - populations,
-            convergence.core_max_iterations,
-            tolerance,
-        )
-    return CoreResult(density, populations, weights, pseudo)
+
+    populations = integrate(density)
+    residual = core_electrons - populations
+    if ordinary_density is not None and np.max(np.abs(residual)) >= tolerance:
+        # Density and radial weights need not approach the limit at exactly
+        # the same rate. Once the ordinary 40-step budget has been spent,
+        # allow a 1% refinement along the density update at fixed trial weights,
+        # where populations are linear. Then reintegrate the nonnegative grid.
+        delta = density - ordinary_density
+        response = integrate(delta)
+        norm_squared = float(np.dot(response, response))
+        projection = float(np.dot(residual, response))
+        if (
+            norm_squared == 0
+            or abs(projection) > _MAX_REFINEMENT_FRACTION * norm_squared
+        ):
+            return None
+        delta *= projection / norm_squared
+        density += delta
+        np.maximum(density, 0, out=density)
+        density[pseudo <= ZERO] = 0
+        populations = integrate(density)
+    if np.max(np.abs(core_electrons - populations)) < tolerance:
+        return CoreResult(density, populations, weights, pseudo)
+    return None
 
 
 def dominant_occupancy_correction(

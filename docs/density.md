@@ -159,9 +159,11 @@ reference densities for the requested element and integer core count.
 
 The initial core-weight fit allows 200 iterations by default. The subsequent
 core-density correction allows 40 iterations to bring each atom's assigned
-core population within `1e-5` electrons of its requested count. To give a
-difficult frame more time while keeping that tolerance, set the correction
-limit for that calculation.
+core population within `1e-5` electrons of its requested count. When two
+nearby cores exchange charge slowly, the solver can extrapolate the density
+and radial weights. It integrates the trial density again and accepts it
+only if every atom meets the requested tolerance. To give a difficult frame
+more time at that tolerance, set the correction limit for that calculation.
 
 ```python
 from py_chargemol import ConvergenceOptions, compute_ddec6
